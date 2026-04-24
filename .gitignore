@@ -1,0 +1,52 @@
+node_modules/
+.pnpm-store/
+.turbo/
+dist/
+build/
+.next/
+out/
+.cache/
+*.tsbuildinfo
+
+# Supabase
+.supabase/
+supabase/.temp/
+supabase/functions/.env
+.env
+.env.local
+.env.*.local
+
+# Secrets
+*.pem
+*.key
+*.p8
+*.p12
+*.keystore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# iOS
+sdk-mobile/ios/.build/
+sdk-mobile/ios/*.xcworkspace/
+sdk-mobile/ios/Pods/
+sdk-mobile/ios/DerivedData/
+
+# Android
+sdk-mobile/android/.gradle/
+sdk-mobile/android/build/
+sdk-mobile/android/local.properties
