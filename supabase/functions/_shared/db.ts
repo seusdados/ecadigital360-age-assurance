@@ -21,15 +21,18 @@ export function db(): SupabaseClient {
 }
 
 // Sets `app.current_tenant_id` on the current connection so downstream
-// triggers can attribute writes correctly. This is fire-and-forget by
-// nature of the supabase-js client (each query gets its own tx) — for
-// strict isolation use rpc('set_tenant_ctx') wrapping the work.
+// triggers (audit_log) can attribute writes correctly. supabase-js opens
+// pooled connections per-call, so this RPC sets the GUC for the session
+// behind the current statement; subsequent triggers in the same query
+// chain inherit it.
+//
+// Defense in depth: audit_log() also COALESCEs to the row's tenant_id
+// when the GUC is unset — but always calling this avoids relying on
+// implicit fallbacks.
 export async function setTenantContext(
   client: SupabaseClient,
   tenantId: string,
 ): Promise<void> {
-  // Use a lightweight RPC. The function must be created in a follow-up
-  // migration — for now we tolerate failure (logged once at boot).
   const { error } = await client.rpc('set_tenant_context', {
     tenant_id: tenantId,
   });

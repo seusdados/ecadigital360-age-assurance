@@ -8,7 +8,7 @@
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authenticateApiKey } from '../_shared/auth.ts';
-import { db } from '../_shared/db.ts';
+import { db, setTenantContext } from '../_shared/db.ts';
 import { jsonResponse, respondError } from '../_shared/errors.ts';
 import { InvalidRequestError } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
@@ -37,6 +37,7 @@ serve(async (req) => {
     const client = db();
 
     const principal = await authenticateApiKey(client, req);
+    await setTenantContext(client, principal.tenantId);
     await checkRateLimit(client, principal.apiKeyHash, 'session-create', principal.tenantId);
 
     let body: unknown;
