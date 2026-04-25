@@ -2,7 +2,7 @@
 //
 // Run with: deno test supabase/functions/_tests/policy-engine.test.ts
 
-import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import { assertEquals } from 'jsr:@std/assert@1';
 import {
   meetsAssurance,
   selectAvailableMethods,

@@ -1,10 +1,7 @@
 // Deno tests — packages/shared/src/jws-generic.ts
 // Cover ES256 verification + audience array handling + parseSdJwt digest check.
 
-import {
-  assert,
-  assertEquals,
-} from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import { assert, assertEquals } from 'jsr:@std/assert@1';
 import {
   parseSdJwt,
   verifyJws,

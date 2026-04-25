@@ -2,7 +2,7 @@
 //
 // Run with: deno test supabase/functions/_tests/tokens.test.ts
 
-import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import { assert, assertEquals } from 'jsr:@std/assert@1';
 import {
   generateEs256KeyPair,
   signResultToken,

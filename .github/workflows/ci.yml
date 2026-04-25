@@ -51,21 +51,28 @@ jobs:
         working-directory: supabase/functions
         run: deno cache _tests/tokens.test.ts _tests/policy-engine.test.ts _tests/fallback-adapter.test.ts _tests/jws-generic.test.ts
 
-      - name: Deno test — tokens
+      - name: Deno test — tokens (verbose)
         working-directory: supabase/functions
-        run: deno test --allow-net --allow-env --allow-read --no-check _tests/tokens.test.ts
+        run: |
+          set -o pipefail
+          deno test -A --no-check _tests/tokens.test.ts 2>&1 | tee /tmp/tokens.log || {
+            echo "::group::tokens.test.ts FAILED — full log"
+            cat /tmp/tokens.log
+            echo "::endgroup::"
+            exit 1
+          }
 
       - name: Deno test — policy-engine
         working-directory: supabase/functions
-        run: deno test --allow-net --allow-env --allow-read --no-check _tests/policy-engine.test.ts
+        run: deno test -A --no-check _tests/policy-engine.test.ts
 
       - name: Deno test — fallback-adapter
         working-directory: supabase/functions
-        run: deno test --allow-net --allow-env --allow-read --no-check _tests/fallback-adapter.test.ts
+        run: deno test -A --no-check _tests/fallback-adapter.test.ts
 
       - name: Deno test — jws-generic
         working-directory: supabase/functions
-        run: deno test --allow-net --allow-env --allow-read --no-check _tests/jws-generic.test.ts
+        run: deno test -A --no-check _tests/jws-generic.test.ts
 
       - name: Deno typecheck (Edge Functions)
         working-directory: supabase/functions

@@ -1,9 +1,6 @@
 // Deno tests — fallback adapter happy + denial paths.
 
-import {
-  assert,
-  assertEquals,
-} from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import { assert, assertEquals } from 'jsr:@std/assert@1';
 import { fallbackAdapter } from '../_shared/adapters/fallback.ts';
 import type { SessionContext } from '../../../packages/adapter-contracts/src/index.ts';
 import type { PolicySnapshot } from '../../../packages/shared/src/types.ts';
