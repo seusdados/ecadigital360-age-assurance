@@ -23,6 +23,7 @@ Base URL durante staging: `https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1
 | issuers-register | POST | `/issuers-register` | full |
 | policies-list | GET | `/policies-list` | full |
 | policies-write | POST | `/policies-write` | full |
+| proof-artifact-url | POST | `/proof-artifact-url` | full (TTL 300s) |
 | jwks | GET | `/jwks` | full (público) |
 | key-rotation | POST | `/key-rotation` | cron-only |
 | webhooks-worker | POST | `/webhooks-worker` | cron-only |
@@ -46,7 +47,7 @@ import { SessionCreateRequestSchema, SessionCreateResponseSchema } from '@agekey
 Request:
 ```json
 {
-  "policy_slug": "br-18-plus",
+  "policy_slug": "dev-18-plus",
   "external_user_ref": "<opaque>",
   "locale": "pt-BR",
   "redirect_url": "https://app.cliente.com/return",
@@ -69,7 +70,7 @@ Response 201:
   "challenge": { "nonce": "...", "expires_at": "..." },
   "available_methods": ["zkp","vc","gateway","fallback"],
   "preferred_method": "zkp",
-  "policy": { "id": "...", "slug": "br-18-plus", "age_threshold": 18, "required_assurance_level": "substantial" }
+  "policy": { "id": "...", "slug": "dev-18-plus", "age_threshold": 18, "required_assurance_level": "substantial" }
 }
 ```
 
@@ -119,7 +120,20 @@ Esquemas inline nos READMEs de `supabase/functions/issuers-*` e `supabase/functi
 
 ## 4. JWKS público
 
-`GET /functions/v1/jwks` (sem auth, `Cache-Control: max-age=300`). Para verificação local de tokens (alternativa ao endpoint `verifications-token-verify`), o frontend pode buscar o JWKS uma vez, cachear e usar `verifyResultToken` de `@agekey/shared` (ainda a expor — está em `_shared/tokens.ts`; vou portar para o package na próxima fatia ou o frontend pode chamar `/verifications-token-verify` que já valida tudo).
+`GET /functions/v1/jwks` (sem auth, `Cache-Control: max-age=300`). Para verificação local de tokens (alternativa a chamar `/verifications-token-verify`), use `verifyResultToken` de `@agekey/shared`:
+
+```ts
+import { fetchJwks, verifyResultToken } from '@agekey/shared';
+
+const jwks = await fetchJwks(`${process.env.NEXT_PUBLIC_AGEKEY_API_BASE}/jwks`);
+const result = await verifyResultToken(jwt, {
+  jwksKeys: jwks,
+  expectedIssuer: process.env.NEXT_PUBLIC_AGEKEY_ISSUER,
+  expectedAudience: 'dev-app',
+});
+```
+
+Recomendado: cachear o JWKS por 5 minutos (mesmo TTL do `Cache-Control` retornado).
 
 ---
 
@@ -135,7 +149,16 @@ e o painel inscreve via `supabase.channel('verifications:tenant:<id>')` filtrado
 
 ## 6. Storage
 
-Bucket `proof-artifacts` (privado). Edge Functions escrevem; painel só lê via signed URL (a expor em endpoint dedicado na Fase 2.b — `proof-artifact-url`).
+Bucket `proof-artifacts` (privado, criado pela migration `011_storage`). Edge Functions escrevem com `service_role`; painel obtém signed URL (TTL 300s) via:
+
+```
+POST /v1/proof-artifact-url
+{ "artifact_id": "<uuid>" }
+
+→ { "url": "...", "expires_in_seconds": 300, "mime_type": "...", "size_bytes": ... }
+```
+
+403 se o artefato pertence a outro tenant; 400 quando `storage_path` é null (declaração fallback não tem objeto).
 
 ---
 
@@ -228,12 +251,10 @@ curl -s "$AK_BASE/jwks" | jq
 
 ## 12. O que NÃO está pronto
 
-- Verificação criptográfica real para ZKP/VC/Gateway (stubs ativos).
+- Verificação criptográfica real para ZKP/Gateway (stubs ativos). VC tem implementação JWS funcional para `format='w3c_vc'` em Fase 2.b.
 - Integração com providers reais no gateway adapter.
 - Encryption real das private keys em `crypto_keys` (placeholder hex; vault pendente).
-- Endpoint `proof-artifact-url` (signed URL para Storage) — necessário antes de `/audit` permitir download de artefatos.
-- Realtime channels.
-- `verifyResultToken` exposto via `@agekey/shared` (atualmente só em `_shared/tokens.ts`).
+- Realtime channels (Fase 3).
 
 Esses itens estão registrados como TODO Fase 2.b nos arquivos correspondentes e podem ser entregues sem bloquear a Fase 3 — o frontend pode evoluir em paralelo usando o adapter fallback como exercício de fluxo completo.
 
