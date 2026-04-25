@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+ * AgeKey theme tokens.
+ * Three palettes: Obsidian (default dark), Bone (warm light),
+ * Zinc (neutral). Theme is selected via `data-theme` on <html>.
+ * Color values are HSL channels so Tailwind can apply opacity via
+ * the `<alpha-value>` placeholder in the config.
+ * ============================================================ */
+
+@layer base {
+  :root,
+  [data-theme='obsidian'] {
+    --background: 220 13% 7%;        /* near-black */
+    --foreground: 30 18% 92%;        /* warm bone for text */
+    --muted: 220 12% 12%;
+    --muted-foreground: 30 8% 65%;
+    --card: 220 13% 9%;
+    --card-foreground: 30 18% 92%;
+    --border: 220 10% 18%;
+    --input: 220 10% 16%;
+    --ring: 36 80% 56%;              /* amber accent */
+    --primary: 36 80% 56%;           /* amber */
+    --primary-foreground: 220 13% 7%;
+    --accent: 220 12% 14%;
+    --accent-foreground: 30 18% 92%;
+    --destructive: 0 70% 56%;
+    --destructive-foreground: 30 18% 92%;
+    --success: 142 50% 48%;
+    --success-foreground: 220 13% 7%;
+    --warning: 36 90% 60%;
+    --warning-foreground: 220 13% 7%;
+    --radius: 0.5rem;
+  }
+
+  [data-theme='bone'] {
+    --background: 38 30% 96%;        /* warm bone */
+    --foreground: 220 18% 14%;
+    --muted: 38 22% 90%;
+    --muted-foreground: 220 6% 38%;
+    --card: 38 35% 99%;
+    --card-foreground: 220 18% 14%;
+    --border: 38 18% 82%;
+    --input: 38 18% 86%;
+    --ring: 36 80% 46%;
+    --primary: 220 18% 14%;          /* dark text on bone */
+    --primary-foreground: 38 30% 96%;
+    --accent: 38 18% 88%;
+    --accent-foreground: 220 18% 14%;
+    --destructive: 0 70% 46%;
+    --destructive-foreground: 38 30% 96%;
+    --success: 142 50% 32%;
+    --success-foreground: 38 30% 96%;
+    --warning: 36 80% 38%;
+    --warning-foreground: 38 30% 96%;
+    --radius: 0.5rem;
+  }
+
+  [data-theme='zinc'] {
+    --background: 220 6% 16%;
+    --foreground: 220 10% 92%;
+    --muted: 220 6% 22%;
+    --muted-foreground: 220 4% 70%;
+    --card: 220 6% 18%;
+    --card-foreground: 220 10% 92%;
+    --border: 220 6% 28%;
+    --input: 220 6% 26%;
+    --ring: 220 60% 60%;
+    --primary: 220 60% 60%;
+    --primary-foreground: 220 6% 12%;
+    --accent: 220 6% 24%;
+    --accent-foreground: 220 10% 92%;
+    --destructive: 0 65% 56%;
+    --destructive-foreground: 220 10% 92%;
+    --success: 142 45% 50%;
+    --success-foreground: 220 6% 12%;
+    --warning: 36 75% 56%;
+    --warning-foreground: 220 6% 12%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  html[data-theme='bone'] {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* WCAG 2.1 AA — focus visible everywhere. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Skip-link for keyboard users. */
+  .skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0.5rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius);
+    z-index: 100;
+    transition: top 150ms ease-out;
+  }
+
+  .skip-link:focus {
+    top: 0.5rem;
+  }
+}
