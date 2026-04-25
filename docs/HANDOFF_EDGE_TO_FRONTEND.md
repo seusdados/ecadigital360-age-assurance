@@ -30,7 +30,13 @@ Base URL durante staging: `https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1
 | retention-job | POST | `/retention-job` | cron-only |
 | trust-registry-refresh | POST | `/trust-registry-refresh` | cron-only |
 
-> **Adapters em modo stub (Fase 2.b):** ZKP, VC e Gateway aceitam o contrato e devolvem `decision=denied` com reason codes específicos. Fallback é **completo**. O frontend pode exercitar o fluxo end-to-end via fallback enquanto os adapters criptográficos são implementados.
+> **Status atualizado dos adapters:**
+> - `fallback` — **completo** (declaração assistida + risk score)
+> - `vc` — **completo (Fase 2.b)** — JWT-VC e SD-JWT, verificação ES256/ES384/RS256 contra `issuers.public_keys_json`, validação de _sd disclosures, nonce binding, revocation cache
+> - `zkp` — stub (TODO Fase 2.c — BBS+ via crypto-core)
+> - `gateway` — stub (TODO Fase 2.c — provider integrations)
+>
+> O frontend pode exercitar o fluxo end-to-end via fallback **e via VC** (cliente real ou mock issuer no trust registry) enquanto ZKP/Gateway são implementados.
 
 ---
 
@@ -106,7 +112,24 @@ import { TokenVerifyRequestSchema, TokenVerifyResponseSchema, TokenRevokeRequest
 
 ### 2.4 Admin — issuers e policies
 
-Esquemas inline nos READMEs de `supabase/functions/issuers-*` e `supabase/functions/policies-*`. Vou consolidar zod schemas em `@agekey/shared` na próxima fatia (issue tracking).
+Schemas inline nos READMEs de `supabase/functions/issuers-*` e `supabase/functions/policies-*`. Os endpoints já validam com Zod no servidor; o frontend pode redeclarar no cliente para feedback inline.
+
+### 2.5 Proof artifact URL
+
+```ts
+// Body
+{ "artifact_id": "<uuid>" }
+// Response 200
+{
+  "artifact_id": "...",
+  "url": "https://...supabase.co/storage/v1/object/sign/...",
+  "expires_in_seconds": 300,
+  "mime_type": "application/jwt",
+  "size_bytes": 4096
+}
+```
+
+403 quando o artefato pertence a outro tenant; 400 quando `storage_path` é null (declaração fallback nunca tem objeto Storage — apenas hash).
 
 ---
 
@@ -144,6 +167,51 @@ Recomendado: cachear o JWKS por 5 minutos (mesmo TTL do `Cache-Control` retornad
 alter publication supabase_realtime add table public.verification_results;
 ```
 e o painel inscreve via `supabase.channel('verifications:tenant:<id>')` filtrado por tenant_id (RLS aplica).
+
+---
+
+## 5.b Webhooks recebidos pelo cliente (server-to-server)
+
+A migration `012_webhook_enqueue` instala um trigger DB que enfileira `webhook_deliveries` automaticamente quando uma `verification_results` é criada. O cron `webhooks-worker` (cada 1m) drena a fila e faz `POST` no `webhook_endpoints.url` cadastrado.
+
+Headers HTTP enviados ao endpoint do cliente:
+
+| Header | Conteúdo |
+|---|---|
+| `X-AgeKey-Event-Type` | `verification.approved` &#124; `verification.denied` &#124; `verification.needs_review` |
+| `X-AgeKey-Delivery-Id` | UUID v7 idempotente — receptor deve deduplicar |
+| `X-AgeKey-Signature` | `hex(HMAC-SHA256(secret_hash, payload_text))` |
+| `Content-Type` | `application/json` |
+
+Payload JSON (sem PII):
+```json
+{
+  "event_id": "01926cb0-...",
+  "event_type": "verification.approved",
+  "tenant_id": "...",
+  "session_id": "...",
+  "application_id": "...",
+  "decision": "approved",
+  "reason_code": "FALLBACK_DECLARATION_ACCEPTED",
+  "method": "fallback",
+  "assurance_level": "low",
+  "threshold_satisfied": true,
+  "jti": "01926cb0-...",
+  "created_at": "2026-04-25T13:30:00Z"
+}
+```
+
+**Validação da assinatura** no backend do cliente (Node.js exemplo):
+```ts
+import { createHmac } from 'node:crypto';
+
+const expected = createHmac('sha256', clientSecretHashHex).update(rawBody).digest('hex');
+if (expected !== req.headers['x-agekey-signature']) throw new Error('invalid_signature');
+```
+
+Note: o `clientSecretHashHex` é o `sha256(raw_secret)` que o cliente computa a partir do `whsec_...` exibido na criação do webhook. Equivalente em segurança a HMAC com a chave hasheada — ver migration `012_webhook_enqueue.sql` para o rationale.
+
+Backoff em falhas: 30s → 2m → 10m → 1h → 6h → 24h. Após 6 tentativas com falha vai para `dead_letter`.
 
 ---
 
@@ -202,7 +270,7 @@ export AK_API_KEY=ak_dev_sk_test_0123456789abcdef   # apenas em staging
 # 1) Cria sessão
 curl -X POST "$AK_BASE/verifications-session-create" \
   -H "X-AgeKey-API-Key: $AK_API_KEY" -H "Content-Type: application/json" \
-  -d '{"policy_slug":"br-18-plus","client_capabilities":{"platform":"web"}}'
+  -d '{"policy_slug":"dev-18-plus","client_capabilities":{"platform":"web"}}'
 
 # 2) Completa via fallback
 SESSION_ID=01926cb0-...
