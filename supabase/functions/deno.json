@@ -10,7 +10,7 @@
   "compilerOptions": {
     "strict": true,
     "noImplicitAny": true,
-    "lib": ["deno.window", "deno.unstable", "esnext"]
+    "lib": ["deno.window", "esnext"]
   },
   "fmt": {
     "useTabs": false,
