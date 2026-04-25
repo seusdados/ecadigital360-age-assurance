@@ -44,15 +44,32 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Deno test
+      - name: Deno version
+        run: deno --version
+
+      - name: Cache dependencies
         working-directory: supabase/functions
-        run: deno test --allow-net --allow-env --allow-read _tests/
+        run: deno cache _tests/tokens.test.ts _tests/policy-engine.test.ts _tests/fallback-adapter.test.ts _tests/jws-generic.test.ts
+
+      - name: Deno test — tokens
+        working-directory: supabase/functions
+        run: deno test --allow-net --allow-env --allow-read --no-check _tests/tokens.test.ts
+
+      - name: Deno test — policy-engine
+        working-directory: supabase/functions
+        run: deno test --allow-net --allow-env --allow-read --no-check _tests/policy-engine.test.ts
+
+      - name: Deno test — fallback-adapter
+        working-directory: supabase/functions
+        run: deno test --allow-net --allow-env --allow-read --no-check _tests/fallback-adapter.test.ts
+
+      - name: Deno test — jws-generic
+        working-directory: supabase/functions
+        run: deno test --allow-net --allow-env --allow-read --no-check _tests/jws-generic.test.ts
 
       - name: Deno typecheck (Edge Functions)
         working-directory: supabase/functions
         run: |
-          # Typecheck each function entrypoint individually so we don't load
-          # zero-arg server entries that try to bind a port.
           deno check _shared/tokens.ts
           deno check _shared/policy-engine.ts
           deno check _shared/adapters/index.ts
