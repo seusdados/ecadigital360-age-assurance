@@ -7,7 +7,7 @@
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
 
-function b64urlDecode(s: string): Uint8Array {
+function b64urlDecode(s: string): Uint8Array<ArrayBuffer> {
   const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
   const bin = atob(b64);
@@ -33,7 +33,7 @@ export interface ParsedJws {
   header: { alg: string; kid?: string; typ?: string; [k: string]: unknown };
   payload: Record<string, unknown>;
   signingInput: string;
-  signature: Uint8Array;
+  signature: Uint8Array<ArrayBuffer>;
 }
 
 export function parseJws(jws: string): ParsedJws | null {
