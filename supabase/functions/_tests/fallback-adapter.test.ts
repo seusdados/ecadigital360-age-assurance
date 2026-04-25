@@ -1,6 +1,6 @@
 // Deno tests — fallback adapter happy + denial paths.
 
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { ok as assert, deepStrictEqual as assertEquals } from 'node:assert';
 import { fallbackAdapter } from '../_shared/adapters/fallback.ts';
 import type { SessionContext } from '../../../packages/adapter-contracts/src/index.ts';
 import type { PolicySnapshot } from '../../../packages/shared/src/types.ts';

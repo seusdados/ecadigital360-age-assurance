@@ -1,7 +1,7 @@
 // Deno tests — packages/shared/src/jws-generic.ts
 // Cover ES256 verification + audience array handling + parseSdJwt digest check.
 
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { ok as assert, deepStrictEqual as assertEquals } from 'node:assert';
 import {
   parseSdJwt,
   verifyJws,

@@ -2,7 +2,7 @@
 //
 // Run with: deno test supabase/functions/_tests/tokens.test.ts
 
-import { assert, assertEquals } from 'jsr:@std/assert@1';
+import { ok as assert, deepStrictEqual as assertEquals } from 'node:assert';
 import {
   generateEs256KeyPair,
   signResultToken,
@@ -56,9 +56,11 @@ Deno.test('verifyResultToken rejects expired tokens', async () => {
   claims.exp = now - 1;
 
   const jwt = await signResultToken(claims, { kid: 'kid-test-2', privateJwk });
+  // Use clockSkewSeconds: 0 to defeat the default 30s tolerance for this test.
   const r = await verifyResultToken(jwt, {
     jwksKeys: [{ kid: 'kid-test-2', publicJwk }],
     now,
+    clockSkewSeconds: 0,
   });
   assertEquals(r.valid, false);
   assertEquals(r.reason, 'expired');

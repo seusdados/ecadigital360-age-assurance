@@ -2,7 +2,7 @@
 //
 // Run with: deno test supabase/functions/_tests/policy-engine.test.ts
 
-import { assertEquals } from 'jsr:@std/assert@1';
+import { deepStrictEqual as assertEquals } from 'node:assert';
 import {
   meetsAssurance,
   selectAvailableMethods,
