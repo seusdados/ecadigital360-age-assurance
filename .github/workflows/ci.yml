@@ -34,6 +34,37 @@ jobs:
       - name: Typecheck @agekey/adapter-contracts
         run: pnpm --filter @agekey/adapter-contracts typecheck
 
+  admin-build:
+    name: Admin (Next.js build + typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Typecheck @agekey/admin
+        run: pnpm --filter @agekey/admin typecheck
+
+      - name: Build @agekey/admin
+        env:
+          # Build-time public env vars. Real values configured in Vercel.
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-placeholder
+          NEXT_PUBLIC_AGEKEY_API_BASE: https://example.supabase.co/functions/v1
+          NEXT_PUBLIC_AGEKEY_ISSUER: https://staging.agekey.com.br
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+        run: pnpm --filter @agekey/admin build
+
   edge-functions-deno:
     name: Edge Functions (Deno tests)
     runs-on: ubuntu-latest
