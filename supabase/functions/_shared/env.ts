@@ -32,6 +32,7 @@ export function optionalEnv(name: string, fallback: string): string {
 // AgeKey-specific config exposed as a frozen object.
 export const config = Object.freeze({
   supabaseUrl: () => requireEnv('SUPABASE_URL'),
+  supabaseAnonKey: () => requireEnv('SUPABASE_ANON_KEY'),
   serviceRoleKey: () => requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
   issuer: () =>
     optionalEnv('AGEKEY_ISSUER', 'https://staging.agekey.com.br'),

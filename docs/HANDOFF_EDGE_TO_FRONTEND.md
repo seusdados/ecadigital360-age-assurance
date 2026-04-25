@@ -19,10 +19,16 @@ Base URL durante staging: `https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1
 | verifications-session-complete | POST | `/verifications-session-complete/<id>` | full |
 | verifications-token-verify | POST | `/verifications-token-verify` | full |
 | verifications-token-revoke | POST | `/verifications-token-revoke` | full |
+| **verifications-list** | GET | `/verifications-list` | **full (Fase 2.c)** |
 | issuers-list | GET | `/issuers-list` | full |
 | issuers-register | POST | `/issuers-register` | full |
 | policies-list | GET | `/policies-list` | full |
 | policies-write | POST | `/policies-write` | full |
+| **applications-list** | GET | `/applications-list` | **full (Fase 2.c)** |
+| **applications-write** | POST | `/applications-write` | **full (Fase 2.c)** |
+| **applications-rotate-key** | POST | `/applications-rotate-key` | **full (Fase 2.c)** |
+| **tenant-bootstrap** | POST | `/tenant-bootstrap` | **full (Fase 2.c, JWT user auth)** |
+| **audit-list** | GET | `/audit-list` | **full (Fase 2.c)** |
 | proof-artifact-url | POST | `/proof-artifact-url` | full (TTL 300s) |
 | jwks | GET | `/jwks` | full (público) |
 | key-rotation | POST | `/key-rotation` | cron-only |
@@ -110,9 +116,31 @@ Response 200:
 import { TokenVerifyRequestSchema, TokenVerifyResponseSchema, TokenRevokeRequestSchema } from '@agekey/shared';
 ```
 
-### 2.4 Admin — issuers e policies
+### 2.4 Admin — issuers, policies, applications, audit, tenant-bootstrap
 
-Schemas inline nos READMEs de `supabase/functions/issuers-*` e `supabase/functions/policies-*`. Os endpoints já validam com Zod no servidor; o frontend pode redeclarar no cliente para feedback inline.
+Schemas Zod completos disponíveis em `@agekey/shared`:
+
+```ts
+import {
+  // Verifications
+  VerificationsListQuerySchema,
+  VerificationsListResponseSchema,
+  // Applications
+  ApplicationsListResponseSchema,
+  ApplicationWriteRequestSchema,
+  ApplicationWriteResponseSchema,  // api_key/webhook_secret RAW só no create
+  ApplicationRotateKeyRequestSchema,
+  ApplicationRotateKeyResponseSchema,
+  // Tenant onboarding
+  TenantBootstrapRequestSchema,
+  TenantBootstrapResponseSchema,   // RAW credentials uma única vez
+  // Audit
+  AuditListQuerySchema,
+  AuditListResponseSchema,
+} from '@agekey/shared';
+```
+
+`tenant-bootstrap` é o ÚNICO endpoint que aceita `Authorization: Bearer <Supabase Auth JWT>` em vez de `X-AgeKey-API-Key`. O frontend usa-o no fluxo `/onboarding` logo após signup.
 
 ### 2.5 Proof artifact URL
 
@@ -319,10 +347,11 @@ curl -s "$AK_BASE/jwks" | jq
 
 ## 12. O que NÃO está pronto
 
-- Verificação criptográfica real para ZKP/Gateway (stubs ativos). VC tem implementação JWS funcional para `format='w3c_vc'` em Fase 2.b.
-- Integração com providers reais no gateway adapter.
-- Encryption real das private keys em `crypto_keys` (placeholder hex; vault pendente).
-- Realtime channels (Fase 3).
+- Adapters **ZKP** e **Gateway**: stubs honrando contrato (Fase 2.c — depende de decisão sobre BBS+ lib e provedores).
+- Encryption real das private keys em `crypto_keys` (placeholder hex; Vault pendente — Fase 2.c).
+- Encryption real do `webhook_endpoints.secret_raw` para rotação de webhook secret (Fase 2.c).
+- Realtime channels (Fase 3 slice posterior).
+- Tipos gerados de `supabase gen types typescript` (Etapa 1 — substituir placeholder em `apps/admin/types/database.ts`).
 
 Esses itens estão registrados como TODO Fase 2.b nos arquivos correspondentes e podem ser entregues sem bloquear a Fase 3 — o frontend pode evoluir em paralelo usando o adapter fallback como exercício de fluxo completo.
 
