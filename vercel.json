@@ -1,4 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "bash -c 'if [ -d apps/admin ]; then exit 1; else echo \"Skipping Vercel deploy: apps/admin not yet created (planned for Fase 3).\"; exit 0; fi'"
+  "buildCommand": "pnpm --filter @agekey/admin build",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "nextjs",
+  "outputDirectory": "apps/admin/.next"
 }
