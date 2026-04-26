@@ -1,45 +1,28 @@
 // Crypto key access — load active signing key + retired keys for verification.
+//
+// As of migration 014_vault_crypto_keys, the canonical storage for the
+// private JWK is `vault.secrets` (pgsodium-encrypted), linked from
+// `crypto_keys.vault_secret_id`. The legacy `private_key_enc` hex column
+// is left in place for backwards compatibility but is no longer written.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { InternalError } from './errors.ts';
 import type { JwsSigningKey } from './tokens.ts';
 
-export interface JwksRecord {
-  kid: string;
-  algorithm: string;
-  status: 'rotating' | 'active' | 'retired';
-  public_jwk_json: JsonWebKey;
-  private_key_enc: string;
-  private_key_iv: string;
-}
-
-// In Fase 2 the private key is stored cleartext-equivalent (hex of raw JWK
-// JSON) keyed by an env-derived static key. A follow-up will move this to
-// Supabase Vault (decrypt via pgsodium / vault.decrypted_secrets).
-async function decryptPrivateJwk(
-  encHex: string,
-  ivHex: string,
-): Promise<JsonWebKey> {
-  // Decoder helper: encHex/ivHex pair store the raw JSON of the JWK as hex.
-  // This is a placeholder — production must call a dedicated decrypt RPC.
-  const bytes = new Uint8Array(encHex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(encHex.slice(i * 2, i * 2 + 2), 16);
-  }
-  void ivHex; // unused in placeholder
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as JsonWebKey;
-  } catch {
-    throw new InternalError('crypto_keys: failed to decode private key');
-  }
-}
-
+/**
+ * Loads the currently active signing key. The private JWK is read from
+ * Supabase Vault via the SECURITY DEFINER RPC `crypto_keys_load_private`.
+ *
+ * Throws InternalError when:
+ *   - No active key exists (run /key-rotation to bootstrap),
+ *   - The active key is a legacy row without vault_secret_id (rotate to fix).
+ */
 export async function loadActiveSigningKey(
   client: SupabaseClient,
 ): Promise<JwsSigningKey> {
   const { data, error } = await client
     .from('crypto_keys')
-    .select('kid, algorithm, status, public_jwk_json, private_key_enc, private_key_iv')
+    .select('kid, algorithm, status, public_jwk_json, vault_secret_id')
     .eq('status', 'active')
     .order('activated_at', { ascending: false })
     .limit(1)
@@ -48,11 +31,22 @@ export async function loadActiveSigningKey(
   if (error) throw error;
   if (!data) throw new InternalError('No active signing key found');
 
-  const privateJwk = await decryptPrivateJwk(
-    data.private_key_enc,
-    data.private_key_iv,
+  if (!data.vault_secret_id) {
+    throw new InternalError(
+      `crypto_keys.kid=${data.kid} has no vault_secret_id (legacy row); rotate to migrate`,
+    );
+  }
+
+  const { data: privateJwk, error: rpcErr } = await client.rpc(
+    'crypto_keys_load_private',
+    { p_kid: data.kid },
   );
-  return { kid: data.kid, privateJwk };
+  if (rpcErr) throw rpcErr;
+  if (!privateJwk) {
+    throw new InternalError(`crypto_keys: vault load returned null for ${data.kid}`);
+  }
+
+  return { kid: data.kid, privateJwk: privateJwk as JsonWebKey };
 }
 
 export async function loadJwksPublicKeys(

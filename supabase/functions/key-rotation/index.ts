@@ -39,14 +39,8 @@ function nextKid(): string {
   return `ak_${y}${m}${day}_${h}`;
 }
 
-// Encode a JWK as hex of its JSON serialization. Production must replace this
-// with a Vault-backed encryption (pgsodium / vault.decrypted_secrets).
-function encodePrivateJwk(jwk: JsonWebKey): { enc: string; iv: string } {
-  const bytes = new TextEncoder().encode(JSON.stringify(jwk));
-  let enc = '';
-  for (const b of bytes) enc += b.toString(16).padStart(2, '0');
-  return { enc, iv: '00'.repeat(12) };
-}
+// (encodePrivateJwk hex placeholder removed in Fase 2.d — keys now live in
+// Supabase Vault. See migration 014_vault_crypto_keys.sql.)
 
 serve(async (req) => {
   const trace_id = newTraceId();
@@ -75,7 +69,6 @@ serve(async (req) => {
     const hasAnyKey = (keys?.length ?? 0) > 0;
 
     const pair = await generateEs256KeyPair();
-    const { enc, iv } = encodePrivateJwk(pair.privateJwk);
     const kid = nextKid();
 
     const initialStatus = hasAnyKey ? 'rotating' : 'active';
@@ -84,12 +77,26 @@ serve(async (req) => {
       algorithm: 'ES256',
       status: initialStatus,
       public_jwk_json: pair.publicJwk,
-      private_key_enc: enc,
-      private_key_iv: iv,
+      // Legacy columns kept NOT NULL by 004_trust.sql; we write empty
+      // strings since the canonical storage is now Supabase Vault
+      // (linked via crypto_keys.vault_secret_id by the RPC below).
+      private_key_enc: '',
+      private_key_iv: '',
       activated_at: initialStatus === 'active' ? new Date().toISOString() : null,
     };
     const ins = await client.from('crypto_keys').insert(newRow).select('id, kid, status').single();
     if (ins.error || !ins.data) throw ins.error ?? new InternalError('Failed to insert key');
+
+    // Persist the private JWK in Supabase Vault and link via vault_secret_id.
+    const { error: vaultErr } = await client.rpc('crypto_keys_store_private', {
+      p_kid: kid,
+      p_private_jwk_json: pair.privateJwk,
+    });
+    if (vaultErr) {
+      // Roll back the row we just inserted to avoid orphan public-only keys.
+      await client.from('crypto_keys').delete().eq('id', ins.data.id);
+      throw new InternalError(`vault store failed: ${vaultErr.message}`);
+    }
 
     // Promote old rotating → active when ≥ 24h old
     const promotions: string[] = [];
@@ -133,12 +140,18 @@ serve(async (req) => {
       }
     }
 
-    // Purge retired keys older than 90 days
+    // Purge retired keys older than 90 days. Vault secret is purged first
+    // to avoid orphan rows in vault.secrets.
     const purges: string[] = [];
     for (const k of keys ?? []) {
       if (k.status !== 'retired' || !k.retired_at) continue;
       const age = now - new Date(k.retired_at).getTime();
       if (age >= RETIRED_PURGE_MS) {
+        const purgeVault = await client.rpc('crypto_keys_purge_vault', {
+          p_kid: k.kid,
+        });
+        if (purgeVault.error) throw purgeVault.error;
+
         const del = await client.from('crypto_keys').delete().eq('id', k.id);
         if (del.error) throw del.error;
         purges.push(k.kid);

@@ -42,6 +42,22 @@ select cron.schedule(
 );
 ```
 
-## TODO Fase 2.b
-Substituir `encodePrivateJwk` (hex placeholder) por encryption real
-via Supabase Vault / pgsodium.
+## Storage da chave privada
+
+Implementado em **Fase 2.d** via Supabase Vault (pgsodium-backed).
+Migration `014_vault_crypto_keys.sql` define os RPCs:
+
+- `crypto_keys_store_private(kid, private_jwk_json)` → grava em
+  `vault.secrets` e linka via `crypto_keys.vault_secret_id`
+- `crypto_keys_load_private(kid)` → retorna JWK descriptografado (chamado
+  por `_shared/keys.ts::loadActiveSigningKey`)
+- `crypto_keys_purge_vault(kid)` → deleta a entrada do vault no purge dos
+  90 dias
+
+EXECUTE granted apenas a `service_role`. Edge Functions chamam via
+service_role; usuários nunca conseguem invocar.
+
+> **Importante:** rows criadas antes da migration 014 (com `private_key_enc`
+> em hex) **não são mais carregáveis** — `loadActiveSigningKey()` lança
+> InternalError. Solução: chame `/key-rotation` uma vez após deploy para
+> seed de uma chave nova vault-backed.
