@@ -57,14 +57,34 @@ echo
 echo "═══════════════════════════════════════════════════"
 echo "  Passo 3/8 — Aplicar seeds"
 echo "═══════════════════════════════════════════════════"
-DB_URL=$(supabase status -o json | grep -o '"DB_URL":"[^"]*"' | cut -d'"' -f4)
-if [[ -z "$DB_URL" ]]; then
-  echo "→ supabase status não retornou DB_URL — pulando seeds remotos"
-  echo "  Aplique manualmente via SQL Editor do Dashboard:"
-  echo "    supabase/seed/01_jurisdictions.sql"
-  echo "    supabase/seed/02_trust_registry.sql"
-  echo "    supabase/seed/03_policies_default.sql"
-  echo "    supabase/seed/04_dev_tenant.sql"
+HAS_PSQL=0
+if command -v psql >/dev/null 2>&1; then HAS_PSQL=1; fi
+
+DB_URL=""
+if [[ $HAS_PSQL -eq 1 ]]; then
+  DB_URL=$(supabase status -o json 2>/dev/null | grep -o '"DB_URL":"[^"]*"' | cut -d'"' -f4 || true)
+fi
+
+if [[ $HAS_PSQL -eq 0 || -z "$DB_URL" ]]; then
+  cat <<'MANUAL'
+→ psql não disponível ou DB_URL não obtida — aplique seeds manualmente.
+
+  Caminho 1 (recomendado): SQL Editor do Dashboard, em
+    https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij/sql/new
+
+  Cole O CONTEÚDO COMPLETO de cada arquivo abaixo, NA ORDEM, e clique RUN:
+    1. supabase/seed/01_jurisdictions.sql      (56 jurisdições)
+    2. supabase/seed/02_trust_registry.sql     (5 issuers globais)
+    3. supabase/seed/03_policies_default.sql   (7 templates: BR + UE)
+    4. supabase/seed/04_dev_tenant.sql         (tenant dev + app + 3 policies)
+
+  Caminho 2: instale psql (PostgreSQL client tools) e rode novamente:
+    Windows:  https://www.postgresql.org/download/windows/  (escolha "Command Line Tools" no installer)
+    macOS:    brew install postgresql@17
+    Linux:    sudo apt install postgresql-client
+
+MANUAL
+  read -p "Pressione ENTER após aplicar os seeds manualmente (ou Ctrl+C para abortar)…" _
 else
   for s in 01_jurisdictions 02_trust_registry 03_policies_default 04_dev_tenant; do
     echo "→ seed: $s"
@@ -82,11 +102,14 @@ ALTER DATABASE postgres SET app.cron_secret = '${AGEKEY_CRON_SECRET}';
 ALTER DATABASE postgres SET app.functions_url = '${FUNCTIONS_BASE}';
 SELECT pg_reload_conf();
 SQL
-if [[ -n "${DB_URL:-}" ]]; then
+if [[ $HAS_PSQL -eq 1 && -n "${DB_URL:-}" ]]; then
   psql "$DB_URL" -v ON_ERROR_STOP=1 -f /tmp/agekey-settings.sql
 else
-  echo "→ Aplique manualmente no SQL Editor:"
+  echo "→ Cole no SQL Editor (https://supabase.com/dashboard/project/${PROJECT_REF}/sql/new) e RUN:"
+  echo
   cat /tmp/agekey-settings.sql
+  echo
+  read -p "Pressione ENTER após aplicar (ou Ctrl+C para abortar)…" _
 fi
 rm -f /tmp/agekey-settings.sql
 
