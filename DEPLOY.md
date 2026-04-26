@@ -32,29 +32,87 @@ veja a seção [Troubleshooting](#troubleshooting) no final.
 
 ## PASSO 1 — Instalar CLIs
 
+> **Windows users:** todos os comandos abaixo devem rodar dentro do
+> **Git Bash** (já instalado com o Git para Windows — Start menu → "Git
+> Bash"). PowerShell **não** funciona porque os scripts usam sintaxe
+> Unix (`export`, `bash`, `openssl`, `$()`).
+>
+> Alternativa Windows: WSL2 (`wsl --install` no PowerShell admin, depois
+> "Ubuntu" no menu).
+
+### Windows (Git Bash recomendado)
+
 ```bash
-# 1.1) Node 20+ via nvm (se ainda não tem)
+# Já dentro do Git Bash:
+
+# 1.1) Node 20+
+# Baixe e instale: https://nodejs.org/  (LTS)
+# Ou via nvm-windows: https://github.com/coreybutler/nvm-windows
+
+# 1.2) pnpm
+npm install -g pnpm@9.14.4
+
+# 1.3) Supabase CLI — via Scoop (recomendado) ou binário direto
+# Scoop:
+#   No PowerShell: iwr -useb get.scoop.sh | iex
+#   No Git Bash:   scoop install supabase
+#
+# OU binário direto:
+#   Baixe https://github.com/supabase/cli/releases/latest
+#   (procure supabase_windows_amd64.tar.gz, extraia, coloque no PATH)
+
+# 1.4) PostgreSQL Client (psql) — OPCIONAL mas recomendado
+# Baixe https://www.postgresql.org/download/windows/
+# No installer escolha SOMENTE "Command Line Tools" (~150MB).
+# Sem psql, o setup-staging.sh pausa pedindo seeds manuais via Dashboard.
+
+# 1.5) Vercel CLI
+npm install -g vercel@latest
+
+# 1.6) Verificar
+node -v && pnpm -v && supabase -v && vercel -V
+# (psql --version, se instalado)
+```
+
+### macOS
+
+```bash
+# 1.1) Node 20+
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-nvm install 20
-nvm use 20
+nvm install 20 && nvm use 20
 
 # 1.2) pnpm
 npm install -g pnpm@9.14.4
 
 # 1.3) Supabase CLI
-# macOS: brew install supabase/tap/supabase
-# Linux:
+brew install supabase/tap/supabase
+
+# 1.4) PostgreSQL client (opcional)
+brew install postgresql@17
+
+# 1.5) Vercel CLI
+npm install -g vercel@latest
+```
+
+### Linux (Ubuntu/Debian/WSL2)
+
+```bash
+# 1.1) Node 20+
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+nvm install 20 && nvm use 20
+
+# 1.2) pnpm
+npm install -g pnpm@9.14.4
+
+# 1.3) Supabase CLI
 curl -fsSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz \
   | sudo tar -xz -C /usr/local/bin
 
-# 1.4) Vercel CLI
-npm install -g vercel@latest
+# 1.4) PostgreSQL client (opcional)
+sudo apt install -y postgresql-client
 
-# 1.5) Verificar instalação
-node -v       # v20.x
-pnpm -v       # 9.14.4
-supabase -v   # 1.180.x ou superior
-vercel -V     # 33+ ou superior
+# 1.5) Vercel CLI
+npm install -g vercel@latest
 ```
 
 ---
@@ -89,16 +147,24 @@ admin (Fase 3 slice 1).
 
 1. Abra https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij/database/extensions
 2. Procure e **habilite** (toggle ON) — uma de cada vez:
-   - `pg_cron` (jobs agendados)
-   - `pgsodium` (criptografia para o Vault)
-   - `pg_net` (HTTP requests dentro do Postgres)
-3. Aguarde 30s; recarregue para confirmar.
+   - `pg_cron` ✓ (jobs agendados)
+   - `pg_net` ✓ (HTTP requests dentro do Postgres)
+3. **`pgsodium` NÃO precisa toggle.** A Supabase já provê o **Vault** em
+   todo projeto (schema `vault.secrets`) — a migration 014 usa direto
+   sem habilitação manual.
+4. Aguarde 30s; recarregue para confirmar `pg_cron` e `pg_net` ON.
 
 ### 3.3) Gerar um CRON_SECRET aleatório
 
+**Git Bash / macOS / Linux:**
 ```bash
 openssl rand -hex 32
 # Copie o output — vai usar no próximo passo
+```
+
+**PowerShell (caso esteja sem Git Bash):**
+```powershell
+-join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
 ```
 
 ### 3.4) Rodar o script de setup
