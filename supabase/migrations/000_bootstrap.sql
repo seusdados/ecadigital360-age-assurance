@@ -142,13 +142,20 @@ $$;
 -- FUNÇÃO: has_role(required text)
 -- Verifica se o usuário corrente tem o papel exigido no tenant.
 -- Ordem de precedência: owner > admin > operator > auditor > billing
+--
+-- IMPORTANTE: declarada como plpgsql (não sql) porque o corpo
+-- referencia tenant_users, que só é criado em 001_tenancy.sql.
+-- Funções SQL validam dependências de tabelas na hora do CREATE;
+-- funções plpgsql só validam quando executadas, então a ordem
+-- entre migrations não é problema.
 -- ============================================================
 CREATE OR REPLACE FUNCTION has_role(required tenant_user_role)
 RETURNS boolean
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE SECURITY DEFINER
 AS $$
-  SELECT EXISTS (
+BEGIN
+  RETURN EXISTS (
     SELECT 1
     FROM tenant_users tu
     WHERE tu.tenant_id = current_tenant_id()
@@ -161,6 +168,7 @@ AS $$
         OR (tu.role = 'admin' AND required != 'owner')
       )
   );
+END;
 $$;
 
 -- ============================================================
