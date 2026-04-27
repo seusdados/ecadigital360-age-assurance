@@ -56,90 +56,105 @@ COMMENT ON FUNCTION uuid_generate_v7() IS
 -- ============================================================
 -- ENUMS GLOBAIS
 --
--- DROP IF EXISTS antes de CREATE para tornar o passo idempotente —
--- se a 000 falhou no meio em uma execução anterior, re-aplicar não
--- crasheia em "type already exists". CASCADE remove dependências
--- (funções/tabelas que referenciam o tipo serão recriadas pelas
--- migrations subsequentes ou pelas próximas linhas desta migration).
+-- Cada CREATE TYPE é envolto em DO/EXCEPTION para tornar a migration
+-- idempotente SEM cascatear destruição (DROP TYPE CASCADE removeria
+-- colunas em tabelas dependentes — tenants.status, tenant_users.role,
+-- applications.status etc. — se 000 fosse re-aplicada após 001+).
+-- A abordagem aqui assume que se o tipo já existe, ele tem os
+-- valores corretos; mudanças de schema usam ALTER TYPE ADD VALUE
+-- em migrations dedicadas.
 -- ============================================================
-DROP TYPE IF EXISTS tenant_user_role        CASCADE;
-DROP TYPE IF EXISTS tenant_status           CASCADE;
-DROP TYPE IF EXISTS application_status      CASCADE;
-DROP TYPE IF EXISTS verification_method     CASCADE;
-DROP TYPE IF EXISTS session_status          CASCADE;
-DROP TYPE IF EXISTS verification_decision   CASCADE;
-DROP TYPE IF EXISTS assurance_level         CASCADE;
-DROP TYPE IF EXISTS token_status            CASCADE;
-DROP TYPE IF EXISTS issuer_trust_status     CASCADE;
-DROP TYPE IF EXISTS crypto_key_status       CASCADE;
-DROP TYPE IF EXISTS webhook_delivery_status CASCADE;
-DROP TYPE IF EXISTS audit_actor_type        CASCADE;
-DROP TYPE IF EXISTS trust_override          CASCADE;
 
 -- Papéis de usuário dentro de um tenant
-CREATE TYPE tenant_user_role AS ENUM (
-  'owner', 'admin', 'operator', 'auditor', 'billing'
-);
+DO $$ BEGIN
+  CREATE TYPE tenant_user_role AS ENUM (
+    'owner', 'admin', 'operator', 'auditor', 'billing'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status do tenant
-CREATE TYPE tenant_status AS ENUM (
-  'active', 'suspended', 'pending_setup', 'closed'
-);
+DO $$ BEGIN
+  CREATE TYPE tenant_status AS ENUM (
+    'active', 'suspended', 'pending_setup', 'closed'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de aplicação
-CREATE TYPE application_status AS ENUM (
-  'active', 'inactive', 'suspended'
-);
+DO $$ BEGIN
+  CREATE TYPE application_status AS ENUM (
+    'active', 'inactive', 'suspended'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Métodos de verificação suportados
-CREATE TYPE verification_method AS ENUM (
-  'zkp', 'vc', 'gateway', 'fallback'
-);
+DO $$ BEGIN
+  CREATE TYPE verification_method AS ENUM (
+    'zkp', 'vc', 'gateway', 'fallback'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de uma sessão de verificação
-CREATE TYPE session_status AS ENUM (
-  'pending', 'in_progress', 'completed', 'expired', 'cancelled'
-);
+DO $$ BEGIN
+  CREATE TYPE session_status AS ENUM (
+    'pending', 'in_progress', 'completed', 'expired', 'cancelled'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Decisão de verificação
-CREATE TYPE verification_decision AS ENUM (
-  'approved', 'denied', 'needs_review'
-);
+DO $$ BEGIN
+  CREATE TYPE verification_decision AS ENUM (
+    'approved', 'denied', 'needs_review'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Nível de assurance (eIDAS / NIST 800-63)
-CREATE TYPE assurance_level AS ENUM (
-  'low', 'substantial', 'high'
-);
+DO $$ BEGIN
+  CREATE TYPE assurance_level AS ENUM (
+    'low', 'substantial', 'high'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de token de resultado
-CREATE TYPE token_status AS ENUM (
-  'active', 'revoked', 'expired'
-);
+DO $$ BEGIN
+  CREATE TYPE token_status AS ENUM (
+    'active', 'revoked', 'expired'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de issuer no trust registry
-CREATE TYPE issuer_trust_status AS ENUM (
-  'trusted', 'suspended', 'untrusted'
-);
+DO $$ BEGIN
+  CREATE TYPE issuer_trust_status AS ENUM (
+    'trusted', 'suspended', 'untrusted'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de chave criptográfica
-CREATE TYPE crypto_key_status AS ENUM (
-  'rotating', 'active', 'retired'
-);
+DO $$ BEGIN
+  CREATE TYPE crypto_key_status AS ENUM (
+    'rotating', 'active', 'retired'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de entrega de webhook
-CREATE TYPE webhook_delivery_status AS ENUM (
-  'pending', 'delivered', 'failed', 'dead_letter'
-);
+DO $$ BEGIN
+  CREATE TYPE webhook_delivery_status AS ENUM (
+    'pending', 'delivered', 'failed', 'dead_letter'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Tipo de ator em eventos de auditoria
-CREATE TYPE audit_actor_type AS ENUM (
-  'user', 'api_key', 'system', 'cron'
-);
+DO $$ BEGIN
+  CREATE TYPE audit_actor_type AS ENUM (
+    'user', 'api_key', 'system', 'cron'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Override de confiança por tenant
-CREATE TYPE trust_override AS ENUM (
-  'trust', 'distrust'
-);
+DO $$ BEGIN
+  CREATE TYPE trust_override AS ENUM (
+    'trust', 'distrust'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================
 -- FUNÇÃO: current_tenant_id()
