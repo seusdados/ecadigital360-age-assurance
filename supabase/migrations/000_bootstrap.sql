@@ -18,11 +18,18 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 -- ============================================================
 -- UUID v7 — ordenável por tempo, melhor para índices B-tree
 -- Fallback puro PL/pgSQL quando pg_uuidv7 não está disponível
+--
+-- NOTA Supabase: pgcrypto instala suas funções no schema `extensions`,
+-- não em `public`. Por isso esta função (e todas as outras que usam
+-- gen_random_bytes/digest/hmac) define `SET search_path` explicitamente
+-- — caso contrário falha ao executar quando o caller tem search_path
+-- diferente do nosso.
 -- ============================================================
 CREATE OR REPLACE FUNCTION uuid_generate_v7()
 RETURNS uuid
 LANGUAGE plpgsql
 VOLATILE PARALLEL SAFE
+SET search_path = public, extensions
 AS $$
 DECLARE
   unix_ms  bigint;
@@ -48,7 +55,26 @@ COMMENT ON FUNCTION uuid_generate_v7() IS
 
 -- ============================================================
 -- ENUMS GLOBAIS
+--
+-- DROP IF EXISTS antes de CREATE para tornar o passo idempotente —
+-- se a 000 falhou no meio em uma execução anterior, re-aplicar não
+-- crasheia em "type already exists". CASCADE remove dependências
+-- (funções/tabelas que referenciam o tipo serão recriadas pelas
+-- migrations subsequentes ou pelas próximas linhas desta migration).
 -- ============================================================
+DROP TYPE IF EXISTS tenant_user_role        CASCADE;
+DROP TYPE IF EXISTS tenant_status           CASCADE;
+DROP TYPE IF EXISTS application_status      CASCADE;
+DROP TYPE IF EXISTS verification_method     CASCADE;
+DROP TYPE IF EXISTS session_status          CASCADE;
+DROP TYPE IF EXISTS verification_decision   CASCADE;
+DROP TYPE IF EXISTS assurance_level         CASCADE;
+DROP TYPE IF EXISTS token_status            CASCADE;
+DROP TYPE IF EXISTS issuer_trust_status     CASCADE;
+DROP TYPE IF EXISTS crypto_key_status       CASCADE;
+DROP TYPE IF EXISTS webhook_delivery_status CASCADE;
+DROP TYPE IF EXISTS audit_actor_type        CASCADE;
+DROP TYPE IF EXISTS trust_override          CASCADE;
 
 -- Papéis de usuário dentro de um tenant
 CREATE TYPE tenant_user_role AS ENUM (
@@ -208,11 +234,13 @@ $$;
 -- ============================================================
 -- FUNÇÃO: sha256_hex(val text)
 -- Hash SHA-256 como hex string. Usado para api_key_hash, etc.
+-- SET search_path explícito porque digest() vive em `extensions`.
 -- ============================================================
 CREATE OR REPLACE FUNCTION sha256_hex(val text)
 RETURNS text
 LANGUAGE sql
 IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = public, extensions
 AS $$
   SELECT encode(digest(val, 'sha256'), 'hex');
 $$;

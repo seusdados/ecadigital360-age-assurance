@@ -65,7 +65,8 @@ CREATE OR REPLACE FUNCTION fan_out_verification_webhooks()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+-- hmac() vive em `extensions` (pgcrypto). search_path inclui ambos.
+SET search_path = public, extensions
 AS $$
 DECLARE
   v_endpoint     RECORD;
