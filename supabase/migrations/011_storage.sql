@@ -42,7 +42,11 @@ CREATE POLICY "proof_artifacts_insert" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (false);  -- only service_role writes
 
-COMMENT ON POLICY "proof_artifacts_select" ON storage.objects IS
-  'Tenant members with role >= auditor leem os objetos do próprio tenant.';
-COMMENT ON POLICY "proof_artifacts_insert" ON storage.objects IS
-  'Escrita só via service_role (Edge Functions). Bloqueia upload direto pelo cliente.';
+-- Notas (eram COMMENT ON POLICY mas storage.objects pertence a
+-- supabase_storage_admin, então COMMENT exige ownership que não temos):
+--
+--   proof_artifacts_select:
+--     Tenant members with role >= auditor leem os objetos do próprio tenant.
+--
+--   proof_artifacts_insert:
+--     Escrita só via service_role (Edge Functions). Bloqueia upload direto pelo cliente.
