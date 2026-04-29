@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgeKey — Verificação de idade</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+    <style>
+      :root {
+        /* High-contrast palette for WCAG 2.1 AA. */
+        --bg: #ffffff;
+        --fg: #0b0b0c;
+        --muted: #5a5a63;
+        --primary: #0b5fff;
+        --primary-fg: #ffffff;
+        --border: #d6d6dc;
+        --error: #b00020;
+        --success: #1f7a3a;
+        --focus: #0b5fff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e0f12;
+          --fg: #f3f4f7;
+          --muted: #b4b6bf;
+          --primary: #6ea8ff;
+          --primary-fg: #0a0a0d;
+          --border: #2a2b30;
+          --error: #ff6b7a;
+          --success: #6ee49a;
+          --focus: #6ea8ff;
+        }
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          'Inter',
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        padding: 24px;
+      }
+      .stage {
+        width: 100%;
+        max-width: 480px;
+        display: none;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .stage[data-active='true'] {
+        display: flex;
+      }
+      h1 {
+        font-size: 22px;
+        font-weight: 600;
+        margin: 0;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      button {
+        font: inherit;
+        padding: 10px 16px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--fg);
+        cursor: pointer;
+        min-height: 44px; /* WCAG target size */
+      }
+      button.primary {
+        background: var(--primary);
+        color: var(--primary-fg);
+        border-color: var(--primary);
+        font-weight: 600;
+      }
+      button:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      label {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 14px;
+        color: var(--fg);
+      }
+      input[type='checkbox'] {
+        margin-top: 4px;
+        width: 18px;
+        height: 18px;
+      }
+      .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid var(--border);
+        border-top-color: var(--primary);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation-duration: 3s;
+        }
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .error-text {
+        color: var(--error);
+      }
+      .success-text {
+        color: var(--success);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <!-- aria-live region for loading and dynamic announcements -->
+      <div
+        id="live-region"
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      ></div>
+
+      <!-- Stage 1: Intro -->
+      <section
+        id="stage-intro"
+        class="stage"
+        data-active="true"
+        aria-labelledby="intro-title"
+      >
+        <h1 id="intro-title" data-i18n="intro.title">Verificação de idade</h1>
+        <p data-i18n="intro.body"></p>
+        <div class="actions">
+          <button id="intro-start" class="primary" data-i18n="intro.start"></button>
+        </div>
+      </section>
+
+      <!-- Stage 2: Consent -->
+      <section
+        id="stage-consent"
+        class="stage"
+        aria-labelledby="consent-title"
+      >
+        <h1 id="consent-title" data-i18n="consent.title"></h1>
+        <p data-i18n="consent.body"></p>
+        <label>
+          <input type="checkbox" id="consent-checkbox" />
+          <span data-i18n="consent.checkboxLabel"></span>
+        </label>
+        <div class="actions">
+          <button
+            id="consent-continue"
+            class="primary"
+            disabled
+            data-i18n="consent.continue"
+          ></button>
+          <button id="consent-cancel" data-i18n="consent.cancel"></button>
+        </div>
+      </section>
+
+      <!-- Stage 3: Method auto-detect -->
+      <section
+        id="stage-method"
+        class="stage"
+        aria-labelledby="method-title"
+      >
+        <h1 id="method-title" data-i18n="method.title"></h1>
+        <div class="spinner" aria-hidden="true"></div>
+        <p data-i18n="method.detecting"></p>
+      </section>
+
+      <!-- Stage 4: Loading / verifying -->
+      <section
+        id="stage-loading"
+        class="stage"
+        aria-labelledby="loading-title"
+      >
+        <h1 id="loading-title" data-i18n="loading.title"></h1>
+        <div class="spinner" aria-hidden="true"></div>
+        <p data-i18n="loading.body"></p>
+      </section>
+
+      <!-- Stage 5: Success -->
+      <section
+        id="stage-success"
+        class="stage"
+        aria-labelledby="success-title"
+      >
+        <h1 id="success-title" class="success-text" data-i18n="success.title"></h1>
+        <p data-i18n="success.body"></p>
+        <div class="actions">
+          <button id="success-return" class="primary" data-i18n="success.return"></button>
+        </div>
+      </section>
+
+      <!-- Stage 6: Error -->
+      <section
+        id="stage-error"
+        class="stage"
+        aria-labelledby="error-title"
+      >
+        <h1 id="error-title" class="error-text" data-i18n="error.title"></h1>
+        <p id="error-body" data-i18n="error.body"></p>
+        <div class="actions">
+          <button id="error-retry" class="primary" data-i18n="error.retry"></button>
+          <button id="error-cancel" data-i18n="error.cancel"></button>
+        </div>
+      </section>
+
+      <!-- Fallback declaration form (sub-stage of method) -->
+      <section
+        id="stage-fallback"
+        class="stage"
+        aria-labelledby="fallback-title"
+      >
+        <h1 id="fallback-title" data-i18n="fallback.title"></h1>
+        <p data-i18n="fallback.body"></p>
+        <label>
+          <input type="checkbox" id="fallback-age" />
+          <span data-i18n="fallback.ageCheckLabel"></span>
+        </label>
+        <label>
+          <input type="checkbox" id="fallback-consent" />
+          <span data-i18n="fallback.consentLabel"></span>
+        </label>
+        <div class="actions">
+          <button
+            id="fallback-submit"
+            class="primary"
+            disabled
+            data-i18n="fallback.submit"
+          ></button>
+          <button id="fallback-cancel" data-i18n="error.cancel"></button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      // --- i18n -------------------------------------------------------------
+      // Inlined pt-BR/en-US/es-ES bundle. The widget host is a static page,
+      // so we ship the strings here rather than fetching them.
+      const messages = {
+        'pt-BR': {
+          intro: {
+            title: 'Verificação de idade',
+            body: 'Vamos confirmar que você atende ao requisito de idade. Seus dados pessoais não serão armazenados — apenas o resultado da verificação.',
+            start: 'Iniciar verificação',
+          },
+          consent: {
+            title: 'Consentimento',
+            body: 'Para prosseguir, precisamos do seu consentimento para realizar uma verificação de idade. Nenhum dado pessoal (nome, CPF, data de nascimento) é coletado ou armazenado pela AgeKey — apenas a confirmação de que você atende ao critério.',
+            checkboxLabel:
+              'Estou ciente e concordo com a verificação de idade conforme descrito.',
+            continue: 'Continuar',
+            cancel: 'Cancelar',
+          },
+          method: {
+            title: 'Detectando método',
+            detecting:
+              'Procurando o melhor método de verificação para o seu dispositivo...',
+          },
+          loading: {
+            title: 'Verificando',
+            body: 'Aguarde enquanto processamos sua verificação...',
+          },
+          success: {
+            title: 'Verificação concluída',
+            body: 'A verificação foi realizada com sucesso. Você pode retornar ao site.',
+            return: 'Retornar',
+          },
+          error: {
+            title: 'Não foi possível concluir',
+            body: 'Ocorreu um erro durante a verificação. Tente novamente ou cancele.',
+            retry: 'Tentar novamente',
+            cancel: 'Cancelar',
+          },
+          fallback: {
+            title: 'Declaração de idade',
+            body: 'Não foi possível encontrar uma carteira digital ou método automático. Para prosseguir, declare e confirme seu consentimento abaixo.',
+            ageCheckLabel: 'Declaro que tenho a idade mínima exigida.',
+            consentLabel:
+              'Concordo com o processamento desta declaração para fins de verificação.',
+            submit: 'Enviar declaração',
+          },
+        },
+        'en-US': {
+          intro: {
+            title: 'Age verification',
+            body: "We'll confirm that you meet the age requirement. Your personal data is not stored — only the verification result.",
+            start: 'Start verification',
+          },
+          consent: {
+            title: 'Consent',
+            body: 'To proceed, we need your consent to perform an age verification. No personal data is collected or stored by AgeKey — only the confirmation that you meet the criterion.',
+            checkboxLabel:
+              'I understand and agree to the age verification as described.',
+            continue: 'Continue',
+            cancel: 'Cancel',
+          },
+          method: {
+            title: 'Detecting method',
+            detecting:
+              'Looking for the best verification method for your device...',
+          },
+          loading: {
+            title: 'Verifying',
+            body: 'Please wait while we process your verification...',
+          },
+          success: {
+            title: 'Verification complete',
+            body: 'The verification was successful. You can return to the site.',
+            return: 'Return',
+          },
+          error: {
+            title: 'Unable to complete',
+            body: 'An error occurred during verification. Please try again or cancel.',
+            retry: 'Try again',
+            cancel: 'Cancel',
+          },
+          fallback: {
+            title: 'Age declaration',
+            body: 'No digital wallet or automatic method was found. To proceed, declare and confirm your consent below.',
+            ageCheckLabel: 'I declare that I meet the required minimum age.',
+            consentLabel:
+              'I agree to the processing of this declaration for verification purposes.',
+            submit: 'Submit declaration',
+          },
+        },
+        'es-ES': {
+          intro: {
+            title: 'Verificación de edad',
+            body: 'Confirmaremos que cumples el requisito de edad. Tus datos personales no se almacenan — solo el resultado de la verificación.',
+            start: 'Iniciar verificación',
+          },
+          consent: {
+            title: 'Consentimiento',
+            body: 'Para continuar, necesitamos tu consentimiento para realizar una verificación de edad. AgeKey no recopila ni almacena datos personales — solo la confirmación de que cumples el criterio.',
+            checkboxLabel:
+              'Entiendo y acepto la verificación de edad tal como se describe.',
+            continue: 'Continuar',
+            cancel: 'Cancelar',
+          },
+          method: {
+            title: 'Detectando método',
+            detecting:
+              'Buscando el mejor método de verificación para tu dispositivo...',
+          },
+          loading: {
+            title: 'Verificando',
+            body: 'Espera mientras procesamos tu verificación...',
+          },
+          success: {
+            title: 'Verificación completada',
+            body: 'La verificación se realizó correctamente. Puedes volver al sitio.',
+            return: 'Volver',
+          },
+          error: {
+            title: 'No se pudo completar',
+            body: 'Ocurrió un error durante la verificación. Inténtalo de nuevo o cancela.',
+            retry: 'Reintentar',
+            cancel: 'Cancelar',
+          },
+          fallback: {
+            title: 'Declaración de edad',
+            body: 'No se encontró una cartera digital ni un método automático. Para continuar, declara y confirma tu consentimiento abajo.',
+            ageCheckLabel: 'Declaro que tengo la edad mínima requerida.',
+            consentLabel:
+              'Acepto el procesamiento de esta declaración para fines de verificación.',
+            submit: 'Enviar declaración',
+          },
+        },
+      };
+
+      function pickLocale(tag) {
+        if (!tag) return 'pt-BR';
+        if (messages[tag]) return tag;
+        const primary = String(tag).split('-')[0];
+        if (primary === 'en') return 'en-US';
+        if (primary === 'es') return 'es-ES';
+        return 'pt-BR';
+      }
+
+      function get(obj, path) {
+        return path.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), obj);
+      }
+
+      function applyI18n(localeTag) {
+        const locale = pickLocale(localeTag);
+        document.documentElement.lang = locale;
+        const bundle = messages[locale];
+        document.querySelectorAll('[data-i18n]').forEach((node) => {
+          const key = node.getAttribute('data-i18n');
+          const value = get(bundle, key);
+          if (typeof value === 'string') node.textContent = value;
+        });
+      }
+
+      // --- State machine ---------------------------------------------------
+      const state = {
+        applicationId: null,
+        policySlug: null,
+        policyId: null,
+        sessionId: null,
+        methodPreference: null,
+        locale: 'pt-BR',
+        apiBase: null,
+        parentOrigin: '*',
+      };
+
+      const STAGES = [
+        'intro',
+        'consent',
+        'method',
+        'loading',
+        'success',
+        'error',
+        'fallback',
+      ];
+
+      function showStage(name) {
+        STAGES.forEach((s) => {
+          const el = document.getElementById(`stage-${s}`);
+          if (el) el.setAttribute('data-active', s === name ? 'true' : 'false');
+        });
+        // Move keyboard focus to the stage heading for accessibility.
+        const heading = document.querySelector(
+          `#stage-${name} h1`,
+        );
+        if (heading) {
+          heading.setAttribute('tabindex', '-1');
+          heading.focus({ preventScroll: false });
+        }
+      }
+
+      function announce(text) {
+        const region = document.getElementById('live-region');
+        if (region) region.textContent = text;
+      }
+
+      function emit(eventName, detail) {
+        if (!window.parent) return;
+        window.parent.postMessage(
+          { type: 'agekey:event', event: eventName, detail: detail || {} },
+          state.parentOrigin || '*',
+        );
+      }
+
+      function showError(message, code) {
+        const body = document.getElementById('error-body');
+        if (body && message) body.textContent = message;
+        showStage('error');
+        announce(message || 'Erro');
+        emit('error', { error_code: code || 'unknown', error_message: message || '' });
+      }
+
+      // --- Method auto-detection ------------------------------------------
+      async function detectMethod() {
+        // Honor an explicit preference (zkp / vc / gateway / fallback).
+        if (state.methodPreference) return state.methodPreference;
+
+        // Probe Digital Credentials API (Chrome flag).
+        // https://wicg.github.io/digital-credentials/
+        try {
+          const dc = navigator.credentials && 'DigitalCredential' in window;
+          if (dc) {
+            // Race the probe against a 2s timeout — never block the UI.
+            const probe = new Promise((resolve) => {
+              try {
+                // Just check feature presence; full request happens later.
+                resolve('vc');
+              } catch (_e) {
+                resolve(null);
+              }
+            });
+            const timeout = new Promise((resolve) =>
+              setTimeout(() => resolve(null), 2000),
+            );
+            const result = await Promise.race([probe, timeout]);
+            if (result) return result;
+          }
+        } catch (_e) {
+          // ignore — fall through to fallback
+        }
+
+        return 'fallback';
+      }
+
+      // --- Adapter stubs ---------------------------------------------------
+      async function runVcOrZkpOrGateway(method) {
+        // Real implementations land in M9+. For now, emit a structured
+        // not_implemented error so the SDK can recover (e.g. by retrying
+        // with method-preference="fallback").
+        showError(
+          'Método ' + method + ' ainda não disponível neste host.',
+          'not_implemented',
+        );
+      }
+
+      async function runFallback() {
+        showStage('fallback');
+
+        const ageBox = document.getElementById('fallback-age');
+        const consentBox = document.getElementById('fallback-consent');
+        const submit = document.getElementById('fallback-submit');
+        const cancel = document.getElementById('fallback-cancel');
+
+        function refresh() {
+          submit.disabled = !(ageBox.checked && consentBox.checked);
+        }
+        ageBox.addEventListener('change', refresh);
+        consentBox.addEventListener('change', refresh);
+
+        cancel.addEventListener(
+          'click',
+          () => {
+            emit('cancelled', {});
+          },
+          { once: true },
+        );
+
+        submit.addEventListener(
+          'click',
+          async () => {
+            if (!state.sessionId || !state.apiBase) {
+              showError(
+                'Configuração inválida: sessão ou API base ausente.',
+                'invalid_config',
+              );
+              return;
+            }
+            showStage('loading');
+            announce('Verificando declaração...');
+            try {
+              const res = await fetch(
+                state.apiBase.replace(/\/$/, '') +
+                  '/verifications-session-complete/' +
+                  encodeURIComponent(state.sessionId),
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    method: 'fallback',
+                    declaration: { age_at_least: 18, consent: true },
+                    signals: {},
+                  }),
+                },
+              );
+              if (!res.ok) {
+                const text = await res.text();
+                showError(text || 'Erro do servidor', 'http_' + res.status);
+                return;
+              }
+              const data = await res.json();
+              if (data && data.decision === 'approved') {
+                showStage('success');
+                announce('Verificação aprovada');
+                emit('approved', data);
+              } else if (data && data.decision === 'denied') {
+                showError('Verificação negada.', data.reason_code);
+                emit('denied', data);
+              } else if (data && data.decision === 'needs_review') {
+                showStage('loading');
+                emit('needs_review', data);
+              } else {
+                showError('Resposta inesperada do servidor.', 'unexpected');
+              }
+            } catch (err) {
+              showError(
+                'Falha de rede: ' + (err && err.message ? err.message : ''),
+                'network_error',
+              );
+            }
+          },
+          { once: false },
+        );
+      }
+
+      async function startFlow() {
+        showStage('method');
+        announce('Detectando método...');
+        const method = await detectMethod();
+        if (method === 'fallback') {
+          await runFallback();
+        } else {
+          await runVcOrZkpOrGateway(method);
+        }
+      }
+
+      // --- Wire up UI ------------------------------------------------------
+      document.getElementById('intro-start').addEventListener('click', () => {
+        showStage('consent');
+      });
+
+      const consentBox = document.getElementById('consent-checkbox');
+      const consentContinue = document.getElementById('consent-continue');
+      consentBox.addEventListener('change', () => {
+        consentContinue.disabled = !consentBox.checked;
+      });
+      consentContinue.addEventListener('click', () => {
+        startFlow();
+      });
+      document
+        .getElementById('consent-cancel')
+        .addEventListener('click', () => {
+          emit('cancelled', {});
+        });
+
+      document.getElementById('success-return').addEventListener('click', () => {
+        emit('approved', {});
+      });
+      document.getElementById('error-retry').addEventListener('click', () => {
+        showStage('intro');
+      });
+      document.getElementById('error-cancel').addEventListener('click', () => {
+        emit('cancelled', {});
+      });
+
+      // --- Inbound init message --------------------------------------------
+      // The parent must post the `agekey:init` payload. We accept exactly one
+      // init message and remember the parent origin for outbound traffic.
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data || data.type !== 'agekey:init') return;
+        // Defensive: only accept init from a top-level frame.
+        if (event.source !== window.parent) return;
+
+        state.applicationId = data.applicationId || null;
+        state.policySlug = data.policySlug || null;
+        state.policyId = data.policyId || null;
+        state.sessionId = data.sessionId || null;
+        state.methodPreference = data.methodPreference || null;
+        state.locale = data.locale || 'pt-BR';
+        state.apiBase = data.apiBase || null;
+        state.parentOrigin = data.parentOrigin || event.origin || '*';
+        applyI18n(state.locale);
+      });
+
+      // Default locale until init arrives.
+      applyI18n('pt-BR');
+    </script>
+  </body>
+</html>
