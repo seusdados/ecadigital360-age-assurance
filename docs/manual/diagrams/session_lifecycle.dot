@@ -1,0 +1,19 @@
+
+digraph G {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.45", ranksep="0.4"];
+  node [shape=box, style="rounded", fontname="Arial", fontsize=18, margin="0.18,0.10"];
+  edge [fontname="Arial", fontsize=14, arrowsize=0.8];
+
+  a [label="1. Cliente solicita sessão"];
+  b [label="2. AgeKey autentica API key"];
+  c [label="3. Resolve policy e métodos"];
+  d [label="4. Cria session_id"];
+  e [label="5. Cria nonce/challenge"];
+  f [label="6. Usuário apresenta prova"];
+  g [label="7. Adapter valida prova"];
+  h [label="8. Resultado minimizado"];
+  i [label="9. Token assinado"];
+  j [label="10. Cliente valida token"];
+
+  a -> b -> c -> d -> e -> f -> g -> h -> i -> j;
+}
