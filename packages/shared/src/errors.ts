@@ -44,6 +44,13 @@ export class InvalidRequestError extends AgeKeyError {
   }
 }
 
+export class ExternalUserRefPiiError extends AgeKeyError {
+  constructor(message: string, details?: unknown) {
+    super(400, REASON_CODES.EXTERNAL_USER_REF_PII_DETECTED, message, details);
+    this.name = 'ExternalUserRefPiiError';
+  }
+}
+
 export class UnauthorizedError extends AgeKeyError {
   constructor(message = 'Unauthorized') {
     super(401, REASON_CODES.INVALID_REQUEST, message);

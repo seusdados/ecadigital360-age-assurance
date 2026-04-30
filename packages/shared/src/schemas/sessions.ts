@@ -8,13 +8,39 @@ import {
   VerificationDecisionSchema,
   VerificationMethodSchema,
 } from './common.ts';
+import {
+  EXTERNAL_USER_REF_MAX_LENGTH,
+  EXTERNAL_USER_REF_MIN_LENGTH,
+  detectPiiInRef,
+} from '../external-user-ref.ts';
+
+/** Opaque user reference. Must NEVER contain PII (email/CPF/CNPJ/phone/RG)
+ * or trivial placeholders (`test`, `1234`, ...). Clients should send a
+ * stable HMAC or hash of their internal user id. See
+ * `external-user-ref.ts` for the canonical detection logic. */
+export const ExternalUserRefSchema = z
+  .string()
+  .min(EXTERNAL_USER_REF_MIN_LENGTH, {
+    message: `external_user_ref must be at least ${EXTERNAL_USER_REF_MIN_LENGTH} characters (use an opaque hash, never PII)`,
+  })
+  .max(EXTERNAL_USER_REF_MAX_LENGTH)
+  .superRefine((value, ctx) => {
+    const detection = detectPiiInRef(value);
+    if (!detection.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `external_user_ref ${detection.reason ?? 'is invalid'} — use an opaque reference (HMAC/hash), never PII`,
+        params: { reason_code: 'EXTERNAL_USER_REF_PII_DETECTED', detection_code: detection.code },
+      });
+    }
+  });
 
 // POST /v1/verifications/session  — corpo de criação
 export const SessionCreateRequestSchema = z
   .object({
     application_slug: z.string().min(1).max(64).optional(),
     policy_slug: z.string().min(1).max(64),
-    external_user_ref: z.string().max(255).optional(),
+    external_user_ref: ExternalUserRefSchema.optional(),
     locale: LocaleSchema.optional(),
     redirect_url: z.string().url().optional(),
     cancel_url: z.string().url().optional(),
