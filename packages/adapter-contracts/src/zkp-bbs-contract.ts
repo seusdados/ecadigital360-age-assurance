@@ -53,15 +53,33 @@ export function isBbsPlusFormat(format: string): boolean {
   return format === 'bls12381-bbs+' || format === 'bls12381-bbs+-2024';
 }
 
-export function requireBbsProductionReadiness(params: {
-  readonly libraryName?: string;
-  readonly testVectorSet?: string;
-  readonly issuerDid?: string;
-  readonly walletProfile?: string;
-}): void {
-  const missing = Object.entries(params)
-    .filter(([, value]) => !value)
-    .map(([key]) => key);
+/**
+ * Production-readiness gate for BBS+ verifiers. Every capability listed
+ * here MUST be provided before any BBS+ proof is allowed to short-circuit
+ * to `decision=approved`. Missing any one of these = throw, no exceptions.
+ *
+ * The check is exhaustive against the documented checklist
+ * (docs/architecture/open-source-foundation.md), not just against keys
+ * the caller happened to pass.
+ */
+export const BBS_PRODUCTION_REQUIREMENTS = [
+  'libraryName',
+  'testVectorSet',
+  'issuerDid',
+  'walletProfile',
+] as const;
+
+export type BbsProductionReadinessParams = {
+  readonly [K in (typeof BBS_PRODUCTION_REQUIREMENTS)[number]]?: string;
+};
+
+export function requireBbsProductionReadiness(
+  params: BbsProductionReadinessParams,
+): void {
+  const missing: string[] = [];
+  for (const key of BBS_PRODUCTION_REQUIREMENTS) {
+    if (!params[key]) missing.push(key);
+  }
 
   if (missing.length > 0) {
     throw new Error(

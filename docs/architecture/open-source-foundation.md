@@ -184,3 +184,50 @@ O AgeKey deve ir a mercado com:
 4. BBS+ como adapter ready, não como promessa production-ready.
 
 Isso mantém o produto viável, comercial e defensável.
+
+## Checklist de production-readiness para BBS+ / ZKP
+
+Nenhum desbloqueio de BBS+ / BLS12-381 acontece sem TODOS os itens abaixo
+auditáveis no repositório:
+
+- [ ] **Biblioteca criptográfica escolhida e justificada** (ex.:
+      `pairing-crypto`, `noble-bbs`, `mattrglobal/bbs-signatures`,
+      `digitalbazaar/bbs-signatures`). Decisão registrada em ADR.
+- [ ] **Bindings Deno + Web Crypto** validados. WASM build pinned por
+      hash, com tamanho e tempo de inicialização documentados em
+      `docs/architecture/open-source-foundation.md`.
+- [ ] **Test vectors RFC-9508 (BBS) e draft IRTF para BLS12-381**
+      commitados em `packages/adapter-contracts/test-vectors/` e
+      `supabase/functions/_shared/adapters/test-vectors/`. Cada vetor com
+      provenance (URL, commit), proof, public key, expected predicate
+      result, e CI rodando-os.
+- [ ] **Issuer real homologado** com DID resolvable, JWKS publicado e
+      wallet compatível (EUDI ARF / OpenID4VP). Issuer registrado na
+      `issuers` com `trust_status='trusted'`.
+- [ ] **Suite criptográfica documentada**: hash-to-curve, ciphersuite
+      `BLS12-381-SHA-256` ou equivalente, formato de pairing.
+- [ ] **Auditoria criptográfica externa** assinada antes de habilitar
+      `decision=approved` em modo BBS+.
+- [ ] **Compatibilidade de wallet** testada com pelo menos uma wallet
+      EUDI-ARF de referência e log de telemetria que diferencia
+      `predicate-attestation-jws` de `bls12381-bbs+` para conversão.
+- [ ] `requireBbsProductionReadiness({libraryName, testVectorSet,
+      issuerDid, walletProfile})` chamado no boot do adapter para
+      falhar fast se qualquer item faltar.
+
+Enquanto qualquer item permanece aberto, o adapter `zkp.ts` deve
+retornar `reason_code = ZKP_CURVE_UNSUPPORTED` para qualquer
+`proof_format` BBS+. O teste
+`packages/adapter-contracts/src/zkp-bbs-contract.test.ts` reforça
+esse contrato. **Isso não é uma limitação a esconder, é uma posição
+defensável.** Falsa cripto é risco regulatório, comercial e
+reputacional.
+
+## Interface crypto-core futura
+
+Quando os itens acima estiverem prontos, o adapter ZKP deve delegar
+para uma interface `ZkpVerifierAdapter` (já definida em
+`packages/adapter-contracts/src/zkp-bbs-contract.ts`). Nenhuma lib WASM
+deve ser carregada antes dessa decisão. Não introduzir dependência
+WASM "para o caso de" — o custo de bundle e a superfície de auditoria
+não se justificam sem decisão tomada.
