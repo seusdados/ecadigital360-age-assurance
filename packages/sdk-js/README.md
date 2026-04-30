@@ -8,6 +8,35 @@ SDK oficial em JavaScript/TypeScript para o **AgeKey** — plataforma de _age as
 
 ---
 
+## ⚠️ Fluxo de autenticação — IMPORTANTE
+
+A `api_key` do AgeKey é **server-side only**. O SDK **browser nunca a segura**: o backend do consumidor faz proxy das chamadas que exigem autenticação.
+
+```
+┌─────────┐    seu backend cria      ┌────────────┐
+│ Browser │ ◀──── session via    ─── │ Seu Backend│
+│ (sdk-js)│        AgeKeyServer       │            │
+└────┬────┘                           └─────┬──────┘
+     │                                       │
+     │  POST /verifications-session-complete │
+     └──── via SEU BACKEND como proxy ──────▶│ ──▶ AgeKey API
+                                             │     (X-AgeKey-API-Key)
+```
+
+**Setup mínimo:**
+
+1. **Backend** instancia `AgeKeyServer({ apiKey })` e expõe 1 endpoint próprio (`POST /api/agekey/session`) que recebe `policySlug` + `externalUserRef` opcional → chama `server.createSession(...)` → devolve `SessionCreateResponse` para o frontend.
+2. **Backend** também expõe `POST /api/agekey/session/:id/complete` que repassa o body recebido do browser para `<AGEKEY_API>/verifications-session-complete/:id` injetando `X-AgeKey-API-Key`.
+3. **Frontend** instancia `AgeKeyClient({ applicationId, baseUrl: '/api/agekey' })` apontando para o seu próprio backend (não o AgeKey direto).
+
+A próxima versão do SDK (v0.1) terá `AgeKeyClient.start({ session, proxyUrl })` que abstrai o proxy backend e suporte nativo a auth via `session_id` quando o backend AgeKey aceitar (planejado para Fase 2.e).
+
+### Build & Distribuição
+
+Este pacote usa `tsc` para emitir `dist/` (JS + .d.ts) compatível com Node 18+ ESM. Como `@agekey/shared` ainda distribui código TypeScript fonte (não compilado), consumidores Next.js / Vite / qualquer bundler funcionam out-of-the-box; consumidores Node.js puros precisam adicionar `@agekey/shared` à lista de packages a transpilar (futuro v0.1 do `@agekey/shared` shipará `dist/` próprio).
+
+---
+
 ## Instalação
 
 ```bash

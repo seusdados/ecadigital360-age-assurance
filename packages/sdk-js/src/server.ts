@@ -63,8 +63,8 @@ import {
 } from '@agekey/shared';
 import type { ReasonCode } from '@agekey/shared';
 
-export * from './types.ts';
-export * from './errors.ts';
+export * from './types.js';
+export * from './errors.js';
 
 const DEFAULT_BASE_URL =
   'https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1';
@@ -519,7 +519,29 @@ export class AgeKeyServer {
       return this.jwksCache.keys;
     }
     const url = joinUrl(this.baseUrl, '/jwks');
-    const keys = await fetchJwks(url);
+
+    // We inline the JWKS fetch (instead of calling shared `fetchJwks`)
+    // because shared uses global `fetch`, but consumers can pass a custom
+    // `fetch` impl (mocking/proxy/instrumentation) at AgeKeyServer construction.
+    // Honoring it here is consistent with every other network call in this
+    // class. Codex P2 (PR #10).
+    const resp = await this.fetchImpl(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!resp.ok) {
+      throw new Error(`JWKS fetch failed: ${resp.status}`);
+    }
+    const body = (await resp.json()) as {
+      keys?: Array<JsonWebKey & { kid?: string }>;
+    };
+    if (!body || !Array.isArray(body.keys)) {
+      throw new Error('Invalid JWKS document');
+    }
+    const keys = body.keys
+      .filter((k): k is JsonWebKey & { kid: string } => typeof k.kid === 'string')
+      .map((k) => ({ kid: k.kid, publicJwk: k }));
+
     this.jwksCache = { fetchedAt: now, keys };
     return keys;
   }
