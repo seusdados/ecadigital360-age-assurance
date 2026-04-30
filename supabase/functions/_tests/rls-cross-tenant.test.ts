@@ -86,22 +86,35 @@ async function newClient(): Promise<Client> {
 // app.current_tenant_id apontando para o tenant do usuário.
 //
 // O SET LOCAL é descartado pelo ROLLBACK, garantindo isolamento entre testes.
+// Uma "transação-handle" deno-postgres OU o cliente direto. queryArray /
+// queryObject são compatíveis em ambos os tipos.
+type Queryable = {
+  queryArray: Client['queryArray'];
+  queryObject: Client['queryObject'];
+};
+
 async function withAuthContext<T>(
   ctx: AuthCtx,
-  fn: (c: Client) => Promise<T>,
+  fn: (c: Queryable) => Promise<T>,
 ): Promise<T> {
   const c = await newClient();
+  // deno-postgres v0.19 exige explicit createTransaction para que SET LOCAL,
+  // SET ROLE e statements subsequentes compartilhem a mesma TX. queryArray
+  // direto cria uma TX implícita por statement — SET LOCAL não persistiria.
+  const tx = c.createTransaction(
+    `auth_ctx_${ctx.tenantId.replace(/-/g, '').slice(0, 8)}`,
+  );
   try {
     try {
-      await c.queryArray('BEGIN');
-      await c.queryArray('SET LOCAL ROLE authenticated');
-      await c.queryArray(
+      await tx.begin();
+      await tx.queryArray('SET LOCAL ROLE authenticated');
+      await tx.queryArray(
         `SET LOCAL request.jwt.claims = '${JSON.stringify({
           sub: ctx.userId,
           role: 'authenticated',
         })}'`,
       );
-      await c.queryArray(
+      await tx.queryArray(
         `SET LOCAL app.current_tenant_id = '${ctx.tenantId}'`,
       );
     } catch (e) {
@@ -111,8 +124,8 @@ async function withAuthContext<T>(
       );
       throw e;
     }
-    const result = await fn(c);
-    await c.queryArray('ROLLBACK');
+    const result = await fn(tx as unknown as Queryable);
+    await tx.rollback();
     return result;
   } finally {
     await c.end();
@@ -121,7 +134,9 @@ async function withAuthContext<T>(
 
 // Helper: conta linhas de uma query escalar SELECT count(*)
 async function countRows(
-  c: Client,
+  // deno-postgres Client e Transaction expõem queryObject com a mesma
+  // signature; aceita ambos via duck typing.
+  c: { queryObject: Client['queryObject'] },
   sql: string,
   args: unknown[] = [],
 ): Promise<number> {
@@ -139,7 +154,7 @@ async function countRows(
 // Helper: tentar UPDATE/DELETE — retorna número de linhas afetadas. Captura
 // erros de permissão (42501) como "0 linhas, bloqueado por RLS".
 async function tryWrite(
-  c: Client,
+  c: { queryArray: Client['queryArray'] },
   sql: string,
   args: unknown[] = [],
 ): Promise<{ affected: number; error?: string }> {
