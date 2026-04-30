@@ -5,7 +5,7 @@
 //   - Concatenates additional pages fetched via the loadMoreAuditAction
 //     Server Action without re-navigating the whole page.
 
-import { useState, useTransition } from 'react';
+import { Fragment, useState, useTransition } from 'react';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn, formatDateTime, shortId } from '@/lib/utils';
@@ -132,8 +132,8 @@ export function AuditFeed({
               const isOpen = expanded.has(event.id);
               const detailsId = `audit-details-${event.id}`;
               return (
+                <Fragment key={event.id}>
                 <tr
-                  key={event.id}
                   className="border-t border-border align-middle transition hover:bg-accent/20"
                 >
                   <td className="px-2 py-2">
@@ -182,32 +182,26 @@ export function AuditFeed({
                     {event.client_ip ?? '—'}
                   </td>
                 </tr>
+                {isOpen ? (
+                  <tr
+                    id={detailsId}
+                    className="border-t border-border bg-accent/10"
+                  >
+                    <td colSpan={7} className="px-4 py-3">
+                      <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                        diff_json — {event.action}
+                      </p>
+                      <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-relaxed">
+                        {formatJson(event.diff_json)}
+                      </pre>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
-
-        {/* Detail rows — rendered as full-width sections in their own tbody-like
-            block so columns don't have to align with the header. */}
-        <div className="divide-y divide-border border-t border-border">
-          {items
-            .filter((event) => expanded.has(event.id))
-            .map((event) => (
-              <section
-                key={`details-${event.id}`}
-                id={`audit-details-${event.id}`}
-                className="bg-accent/10 px-4 py-3"
-                aria-label={`Detalhes do evento ${event.action}`}
-              >
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                  diff_json — {event.action}
-                </p>
-                <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-relaxed">
-                  {formatJson(event.diff_json)}
-                </pre>
-              </section>
-            ))}
-        </div>
       </div>
 
       {error ? (
