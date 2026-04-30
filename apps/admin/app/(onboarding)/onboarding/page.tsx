@@ -25,14 +25,24 @@ export default async function OnboardingPage() {
     redirect('/login?next=/onboarding');
   }
 
-  const { count, error } = await supabase
+  // Codex P1: requireTenantContext em (app)/* só aceita memberships cujo
+  // tenant NÃO está soft-deleted. Se filtrarmos só por tenant_users.user_id
+  // aqui, usuários cujo único tenant foi marcado deleted_at entram em loop
+  // /onboarding → /dashboard → /onboarding. Por isso fazemos JOIN e
+  // filtramos tenants.deleted_at IS NULL, espelhando a regra do app.
+  const { data: activeMemberships, error } = await supabase
     .from('tenant_users')
-    .select('user_id', { count: 'exact', head: true })
+    .select('tenant_id, tenants:tenant_id ( id, deleted_at )')
     .eq('user_id', user.id);
 
   if (error) throw error;
 
-  if ((count ?? 0) > 0) {
+  const hasActiveTenant = (activeMemberships ?? []).some((row) => {
+    const tenant = (row as { tenants: { deleted_at: string | null } | null }).tenants;
+    return tenant !== null && tenant.deleted_at === null;
+  });
+
+  if (hasActiveTenant) {
     redirect('/dashboard');
   }
 
