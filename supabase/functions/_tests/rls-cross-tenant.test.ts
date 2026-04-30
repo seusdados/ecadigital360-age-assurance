@@ -420,14 +420,19 @@ Deno.test('AK-P0-04 proof_artifacts (getArtifactUrl base) cross-tenant retorna 0
   // em supabase/functions/_tests/proof-artifact-url.test.ts (futuro).
   const seed = await newClient();
   try {
+    // Cast explícito para uuid quando usados como FK e para text quando
+    // concatenados em storage_path — sem isso o prepared-statement type
+    // deducer do Postgres falha com "inconsistent types deduced for $N".
     await seed.queryArray(
       `INSERT INTO proof_artifacts (
          id, session_id, tenant_id, adapter_method, artifact_hash, storage_path
        ) VALUES
-         ('aaaaaaaa-8000-7000-8000-000000000001',
-          $1, $2, 'fallback', 'a-hash-1', $2 || '/' || $1 || '/a'),
-         ('bbbbbbbb-8000-7000-8000-000000000002',
-          $3, $4, 'fallback', 'b-hash-2', $4 || '/' || $3 || '/b')
+         ('aaaaaaaa-8000-7000-8000-000000000001'::uuid,
+          $1::uuid, $2::uuid, 'fallback', 'a-hash-1',
+          $2::text || '/' || $1::text || '/a'),
+         ('bbbbbbbb-8000-7000-8000-000000000002'::uuid,
+          $3::uuid, $4::uuid, 'fallback', 'b-hash-2',
+          $4::text || '/' || $3::text || '/b')
        ON CONFLICT (id) DO NOTHING`,
       [SESSION_A, TENANT_A, SESSION_B, TENANT_B],
     );
