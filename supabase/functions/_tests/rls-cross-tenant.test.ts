@@ -125,7 +125,14 @@ async function withAuthContext<T>(
       throw e;
     }
     const result = await fn(tx as unknown as Queryable);
-    await tx.rollback();
+    // Rollback may fail se a TX já foi auto-encerrada por um PostgresError
+    // anterior (ex.: RLS-blocked INSERT) — deno-postgres v0.19 commit-and-throw
+    // em queryArray quando vê PostgresError. Engolimos o erro de rollback.
+    try {
+      await tx.rollback();
+    } catch (_e) {
+      // tx já fechada — silencioso
+    }
     return result;
   } finally {
     await c.end();
