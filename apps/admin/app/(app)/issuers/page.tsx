@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { agekey, AgeKeyApiError } from '@/lib/agekey/client';
 import { requireTenantContext } from '@/lib/agekey/tenant';
 import { cn, shortId } from '@/lib/utils';
+import { IssuerForm } from './issuer-form';
 
 export const metadata: Metadata = { title: 'Emissores' };
 
@@ -26,12 +27,15 @@ export default async function IssuersPage() {
 
   return (
     <div className="space-y-8">
-      <header className="space-y-1">
-        <h1 className="text-md font-thin">Emissores</h1>
-        <p className="text-sm text-muted-foreground">
-          Trust registry. Emissores globais são geridos pela AgeKey;
-          o seu tenant pode adicionar overrides ou registrar emissores próprios.
-        </p>
+      <header className="flex items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-md font-thin">Emissores</h1>
+          <p className="text-sm text-muted-foreground">
+            Trust registry. Emissores globais são geridos pela AgeKey;
+            o seu tenant pode adicionar overrides ou registrar emissores próprios.
+          </p>
+        </div>
+        <IssuerForm />
       </header>
 
       {loadError ? (
