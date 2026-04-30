@@ -42,6 +42,10 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Protect /app/* — redirect unauthenticated users to /login.
+  // /onboarding requires auth too, but it lives in the (onboarding) route
+  // group OUTSIDE (app), so requireTenantContext does NOT run there — that
+  // way users without a tenant_users row can complete bootstrap without
+  // bouncing back to /onboarding in a loop.
   const path = request.nextUrl.pathname;
   const isAppRoute =
     path === '/dashboard' ||
@@ -52,7 +56,9 @@ export async function updateSession(request: NextRequest) {
     path.startsWith('/issuers') ||
     path.startsWith('/audit') ||
     path.startsWith('/billing') ||
-    path.startsWith('/settings');
+    path.startsWith('/settings') ||
+    path === '/onboarding' ||
+    path.startsWith('/onboarding/');
 
   if (isAppRoute && !user) {
     const url = request.nextUrl.clone();

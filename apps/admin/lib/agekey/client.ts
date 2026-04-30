@@ -1,5 +1,9 @@
 import 'server-only';
 
+import type {
+  VerificationsListQuery,
+  VerificationsListResponse,
+} from '@agekey/shared';
 import { agekeyEnv } from './env';
 
 /**
@@ -132,6 +136,46 @@ export interface IssuerListItem {
   scope: 'global' | 'tenant';
 }
 
+/**
+ * Detailed view of a single verification session — superset of the list
+ * item returned by /verifications-list. Optional fields appear only when
+ * the session has been completed and includes proof artifacts.
+ */
+export interface VerificationSessionDetail {
+  session_id: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'expired' | 'cancelled';
+  method: 'zkp' | 'vc' | 'gateway' | 'fallback' | null;
+  policy: {
+    id: string;
+    slug: string;
+    name: string;
+    age_threshold: number;
+    version: number;
+    jurisdiction_code: string | null;
+  };
+  application: {
+    id: string;
+    slug: string;
+    name: string;
+  };
+  decision: 'approved' | 'denied' | 'needs_review' | null;
+  reason_code: string | null;
+  assurance_level: 'low' | 'substantial' | 'high' | null;
+  jti: string | null;
+  token_revoked: boolean;
+  token_expires_at: string | null;
+  created_at: string;
+  completed_at: string | null;
+  client_capabilities: Record<string, unknown> | null;
+  artifacts: Array<{
+    id: string;
+    kind: string;
+    mime_type: string | null;
+    size_bytes: number | null;
+    created_at: string;
+  }>;
+}
+
 // ---------------------------------------------------------------
 // APPLICATIONS (Slice 4)
 // ---------------------------------------------------------------
@@ -229,6 +273,26 @@ export const agekey = {
         method: 'POST',
         body,
       }),
+  },
+  verifications: {
+    list: (params: Partial<VerificationsListQuery> = {}) =>
+      request<VerificationsListResponse>('/verifications-list', {
+        query: {
+          status: params.status,
+          decision: params.decision,
+          method: params.method,
+          application_id: params.application_id,
+          policy_id: params.policy_id,
+          from: params.from,
+          to: params.to,
+          cursor: params.cursor,
+          limit: params.limit,
+        },
+      }),
+    get: (sessionId: string) =>
+      request<VerificationSessionDetail>(
+        `/verifications-session-get/${encodeURIComponent(sessionId)}`,
+      ),
   },
   applications: {
     list: () =>
