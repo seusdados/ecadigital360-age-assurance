@@ -98,14 +98,31 @@ jobs:
 
       - name: Deno typecheck (Edge Functions)
         working-directory: supabase/functions
+        # Captura stderr de cada deno check num arquivo separado para que
+        # uma falha não esconda o erro real (cada `deno check` pode ter
+        # output extenso). Em falha, o resumo é publicado em
+        # GITHUB_STEP_SUMMARY (acessível na UI mesmo sem login).
         run: |
-          deno check _shared/tokens.ts
-          deno check _shared/policy-engine.ts
-          deno check _shared/adapters/index.ts
-          deno check _shared/adapters/fallback.ts
-          deno check _shared/adapters/vc.ts
-          deno check _shared/adapters/zkp.ts
-          deno check _shared/adapters/gateway.ts
+          set +e
+          mkdir -p /tmp/deno-check
+          fail=0
+          for f in _shared/tokens.ts _shared/policy-engine.ts \
+                   _shared/adapters/index.ts _shared/adapters/fallback.ts \
+                   _shared/adapters/vc.ts _shared/adapters/zkp.ts \
+                   _shared/adapters/gateway.ts; do
+            log="/tmp/deno-check/${f//\//_}.log"
+            echo "→ deno check $f"
+            if ! deno check "$f" > "$log" 2>&1; then
+              fail=1
+              echo "::error file=$f::deno check failed"
+              echo "### deno check FAIL: \`$f\`" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              cat "$log" | tail -120 >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            fi
+            cat "$log"
+          done
+          exit $fail
 
   privacy-guard-fuzz:
     name: Privacy guard fuzz (AK-P0-05)
@@ -247,5 +264,16 @@ jobs:
         # Esse passo é go-live blocker (AK-P0-04). Falha o merge se qualquer
         # tentativa cross-tenant retornar dado.
         run: |
+          set +e
           deno test --allow-net --allow-env --no-check \
-            supabase/functions/_tests/rls-cross-tenant.test.ts
+            supabase/functions/_tests/rls-cross-tenant.test.ts \
+            > /tmp/rls-test.log 2>&1
+          rc=$?
+          cat /tmp/rls-test.log
+          if [ $rc -ne 0 ]; then
+            echo "### Cross-tenant RLS suite FAIL" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -200 /tmp/rls-test.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $rc
