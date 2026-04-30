@@ -92,17 +92,25 @@ async function withAuthContext<T>(
 ): Promise<T> {
   const c = await newClient();
   try {
-    await c.queryArray('BEGIN');
-    await c.queryArray('SET LOCAL ROLE authenticated');
-    await c.queryArray(
-      `SET LOCAL request.jwt.claims = '${JSON.stringify({
-        sub: ctx.userId,
-        role: 'authenticated',
-      })}'`,
-    );
-    await c.queryArray(
-      `SET LOCAL app.current_tenant_id = '${ctx.tenantId}'`,
-    );
+    try {
+      await c.queryArray('BEGIN');
+      await c.queryArray('SET LOCAL ROLE authenticated');
+      await c.queryArray(
+        `SET LOCAL request.jwt.claims = '${JSON.stringify({
+          sub: ctx.userId,
+          role: 'authenticated',
+        })}'`,
+      );
+      await c.queryArray(
+        `SET LOCAL app.current_tenant_id = '${ctx.tenantId}'`,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(
+        `[rls-test] withAuthContext setup failed (tenant=${ctx.tenantId}): ${msg}`,
+      );
+      throw e;
+    }
     const result = await fn(c);
     await c.queryArray('ROLLBACK');
     return result;
@@ -117,9 +125,15 @@ async function countRows(
   sql: string,
   args: unknown[] = [],
 ): Promise<number> {
-  const r = await c.queryObject<{ count: bigint | string }>(sql, args);
-  const v = r.rows[0]?.count;
-  return typeof v === 'bigint' ? Number(v) : Number(v ?? 0);
+  try {
+    const r = await c.queryObject<{ count: bigint | string }>(sql, args);
+    const v = r.rows[0]?.count;
+    return typeof v === 'bigint' ? Number(v) : Number(v ?? 0);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[rls-test] countRows query failed: ${msg}\n  sql: ${sql}\n  args: ${JSON.stringify(args)}`);
+    throw e;
+  }
 }
 
 // Helper: tentar UPDATE/DELETE — retorna número de linhas afetadas. Captura

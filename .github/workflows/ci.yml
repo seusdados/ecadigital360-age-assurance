@@ -259,6 +259,7 @@ jobs:
           deno run --allow-net --allow-env --no-check /tmp/connect_smoke.ts
 
       - name: Run cross-tenant RLS suite
+        id: rls_suite
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres
         # Esse passo é go-live blocker (AK-P0-04). Falha o merge se qualquer
@@ -269,11 +270,21 @@ jobs:
             supabase/functions/_tests/rls-cross-tenant.test.ts \
             > /tmp/rls-test.log 2>&1
           rc=$?
+          echo "==== BEGIN /tmp/rls-test.log ===="
           cat /tmp/rls-test.log
+          echo "==== END /tmp/rls-test.log (rc=$rc) ===="
           if [ $rc -ne 0 ]; then
             echo "### Cross-tenant RLS suite FAIL" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            tail -200 /tmp/rls-test.log >> "$GITHUB_STEP_SUMMARY"
+            tail -300 /tmp/rls-test.log >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
           exit $rc
+
+      - name: Upload RLS test log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rls-test-log
+          path: /tmp/rls-test.log
+          if-no-files-found: warn
