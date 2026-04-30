@@ -26,6 +26,13 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
+-- JURISDICTIONS — necessária pela FK em policies.jurisdiction_code
+-- ============================================================
+INSERT INTO jurisdictions (code, name_pt, name_en, is_bloc)
+VALUES ('BR', 'Brasil', 'Brazil', false)
+ON CONFLICT (code) DO NOTHING;
+
+-- ============================================================
 -- TENANTS
 -- ============================================================
 INSERT INTO tenants (id, name, slug, status, retention_days, plan)

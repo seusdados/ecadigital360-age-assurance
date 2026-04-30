@@ -140,10 +140,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
-      # supabase/postgres já tem pg_cron, pgcrypto, pgsodium, etc. pré-instalados
-      # em shared_preload_libraries — necessário para as migrations 000/009/010.
+      # Vanilla postgres:15 (Debian-based) — aceita os env vars padrão e o
+      # entrypoint padrão. pg_cron/pgsodium/pg_net são stubados pelo
+      # _rls_pre_migrate.sql; ver script para detalhes.
       postgres:
-        image: supabase/postgres:15.8.1.094
+        image: postgres:15
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
@@ -185,22 +186,25 @@ jobs:
         run: |
           psql -c "SELECT version();"
           psql -c "SELECT extname FROM pg_extension ORDER BY extname;"
-          psql -c "SELECT nspname FROM pg_namespace WHERE nspname IN ('auth','storage','vault','extensions','cron') ORDER BY nspname;"
 
-      - name: Pre-migration setup (auth schema, roles, extensions)
-        # Cria auth schema + auth.uid() stub + roles anon/authenticated/service_role
-        # ANTES de aplicar as migrations, para que FKs em auth.users e chamadas
-        # a auth.uid() resolvam.
+      - name: Pre-migration setup (auth, storage, vault, cron, net stubs)
+        # Cria schemas e funções auxiliares que as migrations esperam de um
+        # ambiente Supabase real (auth.uid, vault.create_secret, cron.schedule
+        # stub, net.http_post stub). Idempotente.
         run: |
           psql -v ON_ERROR_STOP=1 \
             -f supabase/functions/_tests/_rls_pre_migrate.sql
 
       - name: Apply migrations 000..016
+        # 000_bootstrap.sql tenta `CREATE EXTENSION pg_cron` que vanilla
+        # postgres:15 não tem — strip apenas essa linha; cron.schedule é
+        # resolvido pelo stub do pre-migrate.
         run: |
           set -e
           for f in supabase/migrations/*.sql; do
             echo "→ applying $(basename "$f")"
-            psql -v ON_ERROR_STOP=1 -f "$f"
+            sed -e '/^CREATE EXTENSION IF NOT EXISTS pg_cron;/d' "$f" \
+              | psql -v ON_ERROR_STOP=1
           done
 
       - name: Apply RLS test seed

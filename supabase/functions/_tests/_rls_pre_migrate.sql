@@ -187,3 +187,87 @@ CREATE OR REPLACE VIEW vault.decrypted_secrets AS
   FROM vault.secrets;
 
 GRANT USAGE ON SCHEMA vault TO service_role;
+
+-- ============================================================
+-- CRON schema stub — substitui pg_cron quando o Postgres do CI não
+-- carrega a extensão (vanilla postgres:15). Os bodies de cron.schedule
+-- são strings, nunca executados pelos testes — basta a função aceitar.
+-- ============================================================
+CREATE SCHEMA IF NOT EXISTS cron;
+
+CREATE TABLE IF NOT EXISTS cron.job (
+  jobid    bigserial PRIMARY KEY,
+  jobname  text UNIQUE,
+  schedule text,
+  command  text,
+  database text DEFAULT current_database(),
+  username text DEFAULT current_user,
+  active   boolean DEFAULT true,
+  nodename text DEFAULT 'localhost',
+  nodeport int DEFAULT 5432
+);
+
+CREATE OR REPLACE FUNCTION cron.schedule(p_name text, p_schedule text, p_command text)
+RETURNS bigint LANGUAGE plpgsql AS $$
+DECLARE v_id bigint;
+BEGIN
+  INSERT INTO cron.job (jobname, schedule, command)
+  VALUES (p_name, p_schedule, p_command)
+  ON CONFLICT (jobname) DO UPDATE SET schedule = EXCLUDED.schedule, command = EXCLUDED.command
+  RETURNING jobid INTO v_id;
+  RETURN v_id;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION cron.schedule(p_schedule text, p_command text)
+RETURNS bigint LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN cron.schedule('job_' || md5(p_command), p_schedule, p_command);
+END
+$$;
+
+CREATE OR REPLACE FUNCTION cron.unschedule(p_name text)
+RETURNS boolean LANGUAGE plpgsql AS $$
+BEGIN
+  DELETE FROM cron.job WHERE jobname = p_name;
+  RETURN true;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION cron.unschedule(p_id bigint)
+RETURNS boolean LANGUAGE plpgsql AS $$
+BEGIN
+  DELETE FROM cron.job WHERE jobid = p_id;
+  RETURN true;
+END
+$$;
+
+GRANT USAGE ON SCHEMA cron TO service_role, postgres;
+GRANT ALL ON TABLE cron.job TO service_role, postgres;
+
+-- ============================================================
+-- NET schema stub — bodies de cron jobs chamam net.http_post; nunca
+-- executados nos testes (cron stub não faz dispatch real).
+-- ============================================================
+CREATE SCHEMA IF NOT EXISTS net;
+
+CREATE OR REPLACE FUNCTION net.http_post(
+  url text,
+  body jsonb DEFAULT '{}'::jsonb,
+  params jsonb DEFAULT '{}'::jsonb,
+  headers jsonb DEFAULT '{}'::jsonb,
+  timeout_milliseconds int DEFAULT 5000
+) RETURNS bigint LANGUAGE sql AS $$
+  SELECT 1::bigint
+$$;
+
+CREATE OR REPLACE FUNCTION net.http_get(
+  url text,
+  params jsonb DEFAULT '{}'::jsonb,
+  headers jsonb DEFAULT '{}'::jsonb,
+  timeout_milliseconds int DEFAULT 5000
+) RETURNS bigint LANGUAGE sql AS $$
+  SELECT 1::bigint
+$$;
+
+GRANT USAGE ON SCHEMA net TO service_role, postgres;
