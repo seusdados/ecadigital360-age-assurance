@@ -1,4 +1,4 @@
-const FORBIDDEN_PUBLIC_KEYS = [
+export const FORBIDDEN_PUBLIC_KEYS = [
   'birthdate',
   'date_of_birth',
   'dob',
