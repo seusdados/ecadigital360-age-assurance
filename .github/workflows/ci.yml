@@ -212,6 +212,35 @@ jobs:
           psql -v ON_ERROR_STOP=1 \
             -f supabase/functions/_tests/_rls_seed.sql
 
+      - name: Smoke — Deno connects to Postgres
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres
+        # Confirma que o driver consegue conectar antes de rodar a suite
+        # completa — facilita debug se algo falhar no driver.
+        run: |
+          cat > /tmp/connect_smoke.ts <<'EOF'
+          import { Client } from 'https://deno.land/x/postgres@v0.19.3/mod.ts';
+          const url = Deno.env.get('TEST_DATABASE_URL')!;
+          const u = new URL(url);
+          const c = new Client({
+            hostname: u.hostname,
+            port: u.port ? Number(u.port) : 5432,
+            user: decodeURIComponent(u.username),
+            password: decodeURIComponent(u.password),
+            database: u.pathname.replace(/^\//, '') || 'postgres',
+            tls: { enabled: false },
+          });
+          await c.connect();
+          const r = await c.queryArray<[number]>('SELECT 1');
+          console.log('connect smoke: rows=', r.rows);
+          const t = await c.queryArray<[number]>(
+            "SELECT count(*) FROM tenants WHERE slug LIKE 'rls-test-%'",
+          );
+          console.log('seeded tenants=', t.rows);
+          await c.end();
+          EOF
+          deno run --allow-net --allow-env --no-check /tmp/connect_smoke.ts
+
       - name: Run cross-tenant RLS suite
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres

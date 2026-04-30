@@ -49,9 +49,35 @@ interface AuthCtx {
   userId: string;
 }
 
+// Parse postgres://user:pass@host:port/db into deno-postgres ClientOptions
+// para que possamos forçar `tls.enabled = false` (postgres vanilla local
+// não tem cert; deno-postgres tenta TLS por padrão e v0.19.x trava em
+// ambiente sem cert).
+function parsePgUrl(url: string) {
+  const u = new URL(url);
+  return {
+    hostname: u.hostname,
+    port: u.port ? Number(u.port) : 5432,
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: u.pathname.replace(/^\//, '') || 'postgres',
+    tls: { enabled: false },
+  };
+}
+
+const PG_OPTIONS = parsePgUrl(DATABASE_URL);
+
 async function newClient(): Promise<Client> {
-  const c = new Client(DATABASE_URL);
-  await c.connect();
+  const c = new Client(PG_OPTIONS);
+  try {
+    await c.connect();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(
+      `[rls-test] failed to connect to ${PG_OPTIONS.hostname}:${PG_OPTIONS.port} as ${PG_OPTIONS.user}: ${msg}`,
+    );
+    throw e;
+  }
   return c;
 }
 
