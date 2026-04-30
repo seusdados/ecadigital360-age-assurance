@@ -15,10 +15,20 @@ export interface PolicyActionState {
   result?: { id: string; version: number; status: 'created' | 'updated' };
 }
 
+// Roles permitidas a mutar policies. Tem que ser owner ou admin do tenant.
+// auditor/billing/operator podem ler mas não escrever.
+const POLICY_WRITE_ROLES = new Set(['owner', 'admin']);
+
 export async function savePolicyAction(
   input: PolicyFormInput,
 ): Promise<PolicyActionState> {
-  await requireTenantContext();
+  const ctx = await requireTenantContext();
+  if (!POLICY_WRITE_ROLES.has(ctx.role)) {
+    return {
+      status: 'error',
+      error: 'Você não tem permissão para alterar políticas. Peça a um admin do tenant.',
+    };
+  }
 
   const parsed = PolicyFormSchema.safeParse(input);
   if (!parsed.success) {

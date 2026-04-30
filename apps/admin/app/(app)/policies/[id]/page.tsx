@@ -51,10 +51,15 @@ export default async function PolicyDetailPage({
 
   const versions = await getPolicyVersions(policy.id);
 
+  // policy.description é populado por /policies-list (campo description
+  // adicionado ao SELECT no fix de Fase 2.b). Sem isso, edits de qualquer
+  // outro campo apagavam silenciosamente a description existente — Codex P2.
+  const policyAny = policy as typeof policy & { description?: string | null };
   const initial: Partial<PolicyFormInput> & { id: string } = {
     id: policy.id,
     slug: policy.slug,
     name: policy.name,
+    description: policyAny.description ?? undefined,
     age_threshold: policy.age_threshold,
     jurisdiction_code: isJurisdiction(policy.jurisdiction_code)
       ? policy.jurisdiction_code

@@ -19,10 +19,19 @@ export interface IssuerActionState {
   result?: { id: string; status: 'created' | 'updated' };
 }
 
+// Roles permitidas a mutar issuers. Tem que ser owner ou admin do tenant.
+const ISSUER_WRITE_ROLES = new Set(['owner', 'admin']);
+
 export async function saveIssuerAction(
   input: IssuerFormInput,
 ): Promise<IssuerActionState> {
-  await requireTenantContext();
+  const ctx = await requireTenantContext();
+  if (!ISSUER_WRITE_ROLES.has(ctx.role)) {
+    return {
+      status: 'error',
+      error: 'Você não tem permissão para registrar/atualizar emissores. Peça a um admin do tenant.',
+    };
+  }
 
   const parsed = IssuerFormSchema.safeParse(input);
   if (!parsed.success) {
