@@ -1,0 +1,20 @@
+
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.3", nodesep="0.55", ranksep="0.8"];
+  node [shape=box, style="rounded", fontname="Arial", fontsize=18, margin="0.16,0.10"];
+  edge [fontname="Arial", fontsize=14, arrowsize=0.8];
+
+  client [label="Cliente"];
+  token [label="AgeKey Token"];
+  jwks [label="JWKS público"];
+  verify [label="Verificar assinatura\niss/aud/exp"];
+  revocation [label="Opcional online:\nchecar revoked_at"];
+  decision [label="Permitir acesso\nse approved"];
+
+  client -> token;
+  client -> jwks;
+  token -> verify;
+  jwks -> verify;
+  verify -> revocation;
+  revocation -> decision;
+}

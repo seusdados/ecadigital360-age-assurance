@@ -1,0 +1,186 @@
+# Fundação open source e limites prudentes de implementação
+
+## Objetivo
+
+Este documento orienta o desenvolvimento do AgeKey com base em ferramentas abertas e padrões amplamente utilizados, sem criar promessas inviáveis ou dependências frágeis. Ele serve para o Claude Code implementar o que é útil agora e deixar claramente marcado o que depende de fornecedores, wallets, issuers ou bibliotecas criptográficas externas.
+
+## Stack observada no repositório
+
+O projeto já usa:
+
+- PostgreSQL/Supabase para banco, Auth, Storage e Edge Functions;
+- Deno nas Edge Functions;
+- Next.js 14 no painel admin;
+- pnpm workspaces e Turborepo;
+- TypeScript;
+- Zod;
+- Web Crypto para JWS/JWT ES256;
+- Supabase Vault para chaves privadas;
+- Supabase migrations versionadas;
+- RLS para multi-tenancy;
+- Storage para artefatos de prova.
+
+Essa combinação é adequada para MVP e para versão licenciável B2B, desde que o produto não prometa criptografia ZKP production-ready sem validação especializada.
+
+## Princípios técnicos
+
+### 1. Open core, não open everything
+
+SDKs, widget, schemas públicos e documentação podem ser MIT/Apache. Painel, policy engine avançada, trust registry gerenciado, billing e relatórios podem permanecer proprietários.
+
+### 2. Adapter contracts antes de integrações definitivas
+
+Para gateways e ZKP, o contrato deve existir antes da implementação real. Isso permite o core funcionar e evita reescrever API pública.
+
+### 3. Sem falsa criptografia
+
+Quando não houver test vectors, issuer real, wallet compatível e biblioteca validada, o código deve falhar explicitamente com reason code adequado, e não retornar "approved" por simulação.
+
+### 4. Minimização acima de conveniência
+
+Todo provider adapter deve normalizar sua resposta para uma decisão mínima. Mesmo que o provider retorne nome, documento, data de nascimento ou selfie, o core AgeKey não deve persistir nem repassar esses dados.
+
+## Camadas open source úteis
+
+### Supabase
+
+Uso adequado:
+
+- Postgres com migrations;
+- RLS;
+- Auth para painel;
+- Edge Functions;
+- Storage com policies;
+- Vault para private keys;
+- pg_cron/pg_net para jobs.
+
+Riscos:
+
+- service role key em ambiente errado;
+- RLS mal testado;
+- Storage com bucket público;
+- migrations com permissões incompatíveis em managed Supabase.
+
+Mitigação:
+
+- funções server-side apenas;
+- testes cross-tenant;
+- hardening Supabase documentado;
+- separação de projeto staging/production.
+
+### Next.js
+
+Uso adequado:
+
+- painel admin;
+- docs ou páginas comerciais;
+- proxy para API pública se necessário;
+- deploy Vercel.
+
+Riscos:
+
+- secrets expostos via `NEXT_PUBLIC_`;
+- server actions sem validação;
+- cache indevido de dados de tenant.
+
+Mitigação:
+
+- separar env pública e server-only;
+- revisar headers e caching;
+- usar Supabase server client com contexto.
+
+### Deno Edge Functions
+
+Uso adequado:
+
+- API de verificação;
+- emissão de token;
+- webhooks;
+- trust registry;
+- rotação de chaves.
+
+Riscos:
+
+- dependência remota sem pin;
+- runtime differences;
+- ausência de observabilidade.
+
+Mitigação:
+
+- pin de versão;
+- logs com trace_id;
+- testes locais quando possível;
+- CI de typecheck.
+
+### JWS/JWT ES256 via Web Crypto
+
+Uso adequado:
+
+- token AgeKey;
+- gateway/predicate attestations quando issuer fornece JWS.
+
+Riscos:
+
+- formato de assinatura ECDSA WebCrypto pode variar em DER/raw em libs externas;
+- kid desconhecido;
+- rotação de chave sem JWKS claro.
+
+Mitigação:
+
+- testes com vetores;
+- endpoint JWKS estável;
+- validação online para revogação.
+
+### Verifiable Credentials / SD-JWT VC
+
+Uso adequado:
+
+- credential mode;
+- selective disclosure;
+- integração futura com wallets.
+
+Riscos:
+
+- fragmentação de formatos;
+- wallet compatibility;
+- revogação;
+- issuer trust registry.
+
+Mitigação:
+
+- contrato de adapter;
+- formatos aceitos por issuer;
+- reason codes específicos;
+- não guardar payload completo.
+
+### BBS+ / BLS12-381
+
+Uso adequado:
+
+- selective disclosure e ZKP forte no futuro.
+
+Riscos:
+
+- pareamento criptográfico complexo;
+- dependência WASM;
+- test vectors;
+- issuer real;
+- validação externa.
+
+Mitigação:
+
+- `ZKP_CURVE_UNSUPPORTED` até readiness;
+- arquivo `test-vectors/README.md`;
+- checklist de produção;
+- revisão criptográfica externa.
+
+## Decisão recomendada
+
+O AgeKey deve ir a mercado com:
+
+1. fallback controlado;
+2. gateway attestation JWS;
+3. credential/VC quando issuer e wallet existirem;
+4. BBS+ como adapter ready, não como promessa production-ready.
+
+Isso mantém o produto viável, comercial e defensável.

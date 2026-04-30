@@ -1,0 +1,28 @@
+
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.3", nodesep="0.55", ranksep="0.85"];
+  node [shape=box, style="rounded", fontname="Arial", fontsize=18, margin="0.16,0.10"];
+  edge [fontname="Arial", fontsize=14, arrowsize=0.8];
+
+  user [label="Usuário final"];
+  client [label="Site/App cliente"];
+  api [label="AgeKey API\nEdge Functions"];
+  policy [label="Policy Engine"];
+  verifier [label="Verifier Core"];
+  trust [label="Trust Registry"];
+  db [label="Postgres + RLS"];
+  storage [label="Storage\nproof artifacts"];
+  issuer [label="Gateway / Wallet / Issuer"];
+  token [label="AgeKey Token\nJWS"];
+
+  user -> client;
+  client -> api [label="sessão/prova"];
+  api -> policy;
+  api -> verifier;
+  verifier -> trust;
+  verifier -> issuer;
+  api -> db;
+  api -> storage;
+  api -> token;
+  token -> client;
+}
