@@ -509,6 +509,17 @@
         emit('error', { error_code: code || 'unknown', error_message: message || '' });
       }
 
+      // showDenied reuses the error stage UI but emits the 'denied' terminal
+      // event instead of 'error'. This keeps "denied" and "error" as distinct
+      // terminal outcomes for consumers (analytics, retry policies).
+      function showDenied(message, payload) {
+        const body = document.getElementById('error-body');
+        if (body && message) body.textContent = message;
+        showStage('error');
+        announce(message || 'Verificação negada');
+        emit('denied', payload || {});
+      }
+
       // --- Method auto-detection ------------------------------------------
       async function detectMethod() {
         // Honor an explicit preference (zkp / vc / gateway / fallback).
@@ -554,6 +565,19 @@
 
       async function runFallback() {
         showStage('fallback');
+
+        // runFallback can be re-entered (Error → Retry → Intro → Consent →
+        // Method → fallback). Reset the four interactive elements by replacing
+        // them with deep clones so any listeners attached on a previous run
+        // are dropped before we re-attach below.
+        ['fallback-age', 'fallback-consent', 'fallback-submit', 'fallback-cancel'].forEach(
+          (id) => {
+            const el = document.getElementById(id);
+            if (el && el.parentNode) {
+              el.parentNode.replaceChild(el.cloneNode(true), el);
+            }
+          },
+        );
 
         const ageBox = document.getElementById('fallback-age');
         const consentBox = document.getElementById('fallback-consent');
@@ -612,8 +636,9 @@
                 announce('Verificação aprovada');
                 emit('approved', data);
               } else if (data && data.decision === 'denied') {
-                showError('Verificação negada.', data.reason_code);
-                emit('denied', data);
+                // Use showDenied (single 'denied' terminal event) — NOT
+                // showError, which would emit 'error' in addition to 'denied'.
+                showDenied('Verificação negada.', data);
               } else if (data && data.decision === 'needs_review') {
                 showStage('loading');
                 emit('needs_review', data);
@@ -661,8 +686,12 @@
           emit('cancelled', {});
         });
 
+      // The 'approved' terminal event was already emitted with the full
+      // server payload at completion time — this button only signals that
+      // the user dismissed the success screen. Emitting 'approved' again
+      // with {} would overwrite the payload that consumers cached.
       document.getElementById('success-return').addEventListener('click', () => {
-        emit('approved', {});
+        emit('closed', { from: 'success' });
       });
       document.getElementById('error-retry').addEventListener('click', () => {
         showStage('intro');
