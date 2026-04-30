@@ -82,9 +82,19 @@ jobs:
         working-directory: supabase/functions
         run: deno cache _tests/tokens.test.ts _tests/policy-engine.test.ts _tests/fallback-adapter.test.ts _tests/jws-generic.test.ts
 
-      - name: Deno test
+      - name: Deno test (Edge Functions unit suites)
         working-directory: supabase/functions
-        run: deno test -A --no-check _tests/
+        # Roda apenas as suites unit (excluindo a integração rls-cross-tenant,
+        # que requer Postgres + auth schema e roda em job próprio).
+        run: |
+          deno test -A --no-check \
+            _tests/tokens.test.ts \
+            _tests/policy-engine.test.ts \
+            _tests/fallback-adapter.test.ts \
+            _tests/jws-generic.test.ts \
+            _tests/credentials.test.ts \
+            _tests/zkp-adapter.test.ts \
+            _tests/gateway-adapter.test.ts
 
       - name: Deno typecheck (Edge Functions)
         working-directory: supabase/functions
@@ -96,3 +106,64 @@ jobs:
           deno check _shared/adapters/vc.ts
           deno check _shared/adapters/zkp.ts
           deno check _shared/adapters/gateway.ts
+
+  privacy-guard-fuzz:
+    name: Privacy guard fuzz (AK-P0-05)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Deno test — privacy-guard fuzz
+        # Esse passo é go-live blocker (AK-P0-05). Falha o merge se qualquer
+        # variação canônica de chave PII passar pelo guard.
+        run: |
+          deno test --allow-net --allow-env --no-check \
+            packages/shared/src/privacy-guard.test.ts
+
+  rls-cross-tenant:
+    name: Cross-tenant RLS (AK-P0-04)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase (mínimo necessário)
+        # Sobe DB + auth + storage para suportar referências auth.users e
+        # FKs do schema. Migrations 000..016 são aplicadas automaticamente.
+        run: |
+          supabase start \
+            --exclude studio,inbucket,realtime,imgproxy,edge-runtime,logflare,vector,pooler
+
+      - name: Apply RLS test seed
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/functions/_tests/_rls_seed.sql
+
+      - name: Run cross-tenant RLS suite
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres
+        # Esse passo é go-live blocker (AK-P0-04). Falha o merge se qualquer
+        # tentativa cross-tenant retornar dado.
+        run: |
+          deno test --allow-net --allow-env --no-check \
+            supabase/functions/_tests/rls-cross-tenant.test.ts
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup

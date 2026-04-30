@@ -2,16 +2,16 @@
 
 ## P0 - Bloqueadores de produção
 
-1. Separar staging e production Supabase.
-2. Configurar DNS `agekey.com.br`.
-3. Garantir que `api.agekey.com.br` exponha API/JWKS de forma estável.
-4. Executar testes de RLS cross-tenant.
-5. Executar privacy tests de payload.
-6. Verificar que `external_user_ref` não recebe PII.
-7. Revisar env vars Vercel e Supabase.
-8. Confirmar key rotation e JWKS.
-9. Criar política de incident response.
-10. Realizar pentest antes de GA.
+1. Separar staging e production Supabase. *(open)*
+2. Configurar DNS `agekey.com.br`. *(open)*
+3. Garantir que `api.agekey.com.br` exponha API/JWKS de forma estável. *(open)*
+4. Executar testes de RLS cross-tenant. *(done — `supabase/functions/_tests/rls-cross-tenant.test.ts`, gate `pnpm test:rls` + CI job `rls-cross-tenant`)*
+5. Executar privacy tests de payload. *(done — `packages/shared/src/privacy-guard.test.ts`, fuzz canônico em CI job `privacy-guard-fuzz`; guard endurecido em `packages/shared/src/privacy-guard.ts` com canonicalização alfanumérica)*
+6. Verificar que `external_user_ref` não recebe PII. *(open — coberto parcialmente pela canonicalização do privacy-guard; falta SDK helper de hash documentado)*
+7. Revisar env vars Vercel e Supabase. *(open)*
+8. Confirmar key rotation e JWKS. *(open)*
+9. Criar política de incident response. *(open)*
+10. Realizar pentest antes de GA. *(open)*
 
 ## P1 - Produto comercial
 
