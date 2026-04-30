@@ -195,3 +195,73 @@ estável**.
 6. Token verify responde.
 7. Headers de segurança presentes em `api.agekey.com.br/v1/*`
    (HSTS, X-Content-Type-Options, Referrer-Policy).
+
+---
+
+## Auditoria de env vars
+
+A matriz canônica de variáveis por scope vive em
+`infrastructure/secrets.md` § "Matrix Vercel envs". O critério de
+aceite (AK-P0-07) é:
+
+- nenhum secret server-only em scope `Preview` ou `Development`;
+- todo `NEXT_PUBLIC_*` clean (sem padrão de secret server-side);
+- toda variável marcada `✓` presente em `Production`.
+
+### Comandos auditáveis
+
+Executar localmente com a `vercel` CLI já logada e linkada ao projeto
+(`vercel link`):
+
+```bash
+vercel env ls production
+vercel env ls preview
+vercel env ls development
+```
+
+### Critérios PASS / FAIL
+
+- **FAIL** se `vercel env ls preview` contém qualquer um dos
+  seguintes: `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`,
+  `AGEKEY_ADMIN_API_KEY`, `WEBHOOK_SIGNING_SECRET`,
+  `CRON_SECRET`.
+- **FAIL** se `vercel env ls development` contém qualquer um dos
+  mesmos itens.
+- **FAIL** se `vercel env ls production` NÃO contém todas as
+  variáveis marcadas `✓` na matriz canônica.
+- **PASS** caso contrário.
+
+### Script automatizado
+
+`infrastructure/scripts/audit-vercel-env.sh` roda os três `vercel
+env ls --json` e compara contra a matriz canônica embutida no
+script. Sai com `0` quando OK e `1` quando alguma regra falha.
+Requisitos: `bash`, `jq` e `vercel` CLI logada.
+
+```bash
+chmod +x infrastructure/scripts/audit-vercel-env.sh
+./infrastructure/scripts/audit-vercel-env.sh
+```
+
+### Bundle leak check
+
+Mesmo com a matriz limpa, vale checar o bundle compilado: qualquer
+secret real injetado por engano num `NEXT_PUBLIC_*` aparece em
+texto cleartext nos chunks estáticos do Next.
+
+```bash
+pnpm --filter @agekey/admin build
+grep -rE "(eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9|sk_live_|service_role)" apps/admin/.next/static
+```
+
+Resultado esperado: **nenhum match**. Qualquer match é um
+incidente — rotacionar a credencial vazada e remover do scope
+`NEXT_PUBLIC_*`.
+
+### Cadência de revisão
+
+- **Frequência**: trimestral (a cada 90 dias).
+- **Owner**: SRE / Tech Lead.
+- **Gatilho extra**: rodar a auditoria também antes de qualquer
+  promote para `Production` que adicione/remova env vars, e em
+  qualquer onboarding de novo membro com acesso ao painel Vercel.
