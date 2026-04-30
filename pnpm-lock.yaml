@@ -116,6 +116,19 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/sdk-js:
+    dependencies:
+      '@agekey/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   packages/shared:
     dependencies:
       zod:
