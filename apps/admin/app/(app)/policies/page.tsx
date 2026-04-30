@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { agekey, AgeKeyApiError } from '@/lib/agekey/client';
 import { requireTenantContext } from '@/lib/agekey/tenant';
 import { cn } from '@/lib/utils';
+import { PolicyForm } from './policy-form';
 
 export const metadata: Metadata = {
   title: 'Políticas',
@@ -25,6 +27,11 @@ export default async function PoliciesPage() {
 
   const ofTenant = policies.filter((p) => !p.is_template);
   const templates = policies.filter((p) => p.is_template);
+  const templateOptions = templates.map((t) => ({
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+  }));
 
   return (
     <div className="space-y-8">
@@ -36,6 +43,7 @@ export default async function PoliciesPage() {
             Templates globais podem ser clonados para o seu tenant.
           </p>
         </div>
+        <PolicyForm templates={templateOptions} />
       </header>
 
       {loadError ? (
@@ -108,9 +116,21 @@ function PolicyTable({
               className="border-t border-border transition hover:bg-accent/20"
             >
               <Td>
-                <code className="font-mono text-xs">{p.slug}</code>
+                <Link
+                  href={`/policies/${p.id}`}
+                  className="font-mono text-xs underline-offset-4 hover:underline"
+                >
+                  {p.slug}
+                </Link>
               </Td>
-              <Td>{p.name}</Td>
+              <Td>
+                <Link
+                  href={`/policies/${p.id}`}
+                  className="underline-offset-4 hover:underline"
+                >
+                  {p.name}
+                </Link>
+              </Td>
               <Td>{p.age_threshold}+</Td>
               <Td className="text-muted-foreground">
                 {p.jurisdiction_code ?? '—'}
