@@ -32,6 +32,9 @@ Thumbs.db
 .idea/
 *.swp
 
+# Claude Code worktrees (ephemeral session state)
+.claude/
+
 # Logs
 *.log
 npm-debug.log*

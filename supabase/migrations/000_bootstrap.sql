@@ -18,11 +18,18 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 -- ============================================================
 -- UUID v7 — ordenável por tempo, melhor para índices B-tree
 -- Fallback puro PL/pgSQL quando pg_uuidv7 não está disponível
+--
+-- NOTA Supabase: pgcrypto instala suas funções no schema `extensions`,
+-- não em `public`. Por isso esta função (e todas as outras que usam
+-- gen_random_bytes/digest/hmac) define `SET search_path` explicitamente
+-- — caso contrário falha ao executar quando o caller tem search_path
+-- diferente do nosso.
 -- ============================================================
 CREATE OR REPLACE FUNCTION uuid_generate_v7()
 RETURNS uuid
 LANGUAGE plpgsql
 VOLATILE PARALLEL SAFE
+SET search_path = public, extensions
 AS $$
 DECLARE
   unix_ms  bigint;
@@ -48,72 +55,106 @@ COMMENT ON FUNCTION uuid_generate_v7() IS
 
 -- ============================================================
 -- ENUMS GLOBAIS
+--
+-- Cada CREATE TYPE é envolto em DO/EXCEPTION para tornar a migration
+-- idempotente SEM cascatear destruição (DROP TYPE CASCADE removeria
+-- colunas em tabelas dependentes — tenants.status, tenant_users.role,
+-- applications.status etc. — se 000 fosse re-aplicada após 001+).
+-- A abordagem aqui assume que se o tipo já existe, ele tem os
+-- valores corretos; mudanças de schema usam ALTER TYPE ADD VALUE
+-- em migrations dedicadas.
 -- ============================================================
 
 -- Papéis de usuário dentro de um tenant
-CREATE TYPE tenant_user_role AS ENUM (
-  'owner', 'admin', 'operator', 'auditor', 'billing'
-);
+DO $$ BEGIN
+  CREATE TYPE tenant_user_role AS ENUM (
+    'owner', 'admin', 'operator', 'auditor', 'billing'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status do tenant
-CREATE TYPE tenant_status AS ENUM (
-  'active', 'suspended', 'pending_setup', 'closed'
-);
+DO $$ BEGIN
+  CREATE TYPE tenant_status AS ENUM (
+    'active', 'suspended', 'pending_setup', 'closed'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de aplicação
-CREATE TYPE application_status AS ENUM (
-  'active', 'inactive', 'suspended'
-);
+DO $$ BEGIN
+  CREATE TYPE application_status AS ENUM (
+    'active', 'inactive', 'suspended'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Métodos de verificação suportados
-CREATE TYPE verification_method AS ENUM (
-  'zkp', 'vc', 'gateway', 'fallback'
-);
+DO $$ BEGIN
+  CREATE TYPE verification_method AS ENUM (
+    'zkp', 'vc', 'gateway', 'fallback'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de uma sessão de verificação
-CREATE TYPE session_status AS ENUM (
-  'pending', 'in_progress', 'completed', 'expired', 'cancelled'
-);
+DO $$ BEGIN
+  CREATE TYPE session_status AS ENUM (
+    'pending', 'in_progress', 'completed', 'expired', 'cancelled'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Decisão de verificação
-CREATE TYPE verification_decision AS ENUM (
-  'approved', 'denied', 'needs_review'
-);
+DO $$ BEGIN
+  CREATE TYPE verification_decision AS ENUM (
+    'approved', 'denied', 'needs_review'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Nível de assurance (eIDAS / NIST 800-63)
-CREATE TYPE assurance_level AS ENUM (
-  'low', 'substantial', 'high'
-);
+DO $$ BEGIN
+  CREATE TYPE assurance_level AS ENUM (
+    'low', 'substantial', 'high'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de token de resultado
-CREATE TYPE token_status AS ENUM (
-  'active', 'revoked', 'expired'
-);
+DO $$ BEGIN
+  CREATE TYPE token_status AS ENUM (
+    'active', 'revoked', 'expired'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de issuer no trust registry
-CREATE TYPE issuer_trust_status AS ENUM (
-  'trusted', 'suspended', 'untrusted'
-);
+DO $$ BEGIN
+  CREATE TYPE issuer_trust_status AS ENUM (
+    'trusted', 'suspended', 'untrusted'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de chave criptográfica
-CREATE TYPE crypto_key_status AS ENUM (
-  'rotating', 'active', 'retired'
-);
+DO $$ BEGIN
+  CREATE TYPE crypto_key_status AS ENUM (
+    'rotating', 'active', 'retired'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Status de entrega de webhook
-CREATE TYPE webhook_delivery_status AS ENUM (
-  'pending', 'delivered', 'failed', 'dead_letter'
-);
+DO $$ BEGIN
+  CREATE TYPE webhook_delivery_status AS ENUM (
+    'pending', 'delivered', 'failed', 'dead_letter'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Tipo de ator em eventos de auditoria
-CREATE TYPE audit_actor_type AS ENUM (
-  'user', 'api_key', 'system', 'cron'
-);
+DO $$ BEGIN
+  CREATE TYPE audit_actor_type AS ENUM (
+    'user', 'api_key', 'system', 'cron'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Override de confiança por tenant
-CREATE TYPE trust_override AS ENUM (
-  'trust', 'distrust'
-);
+DO $$ BEGIN
+  CREATE TYPE trust_override AS ENUM (
+    'trust', 'distrust'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================
 -- FUNÇÃO: current_tenant_id()
@@ -142,13 +183,20 @@ $$;
 -- FUNÇÃO: has_role(required text)
 -- Verifica se o usuário corrente tem o papel exigido no tenant.
 -- Ordem de precedência: owner > admin > operator > auditor > billing
+--
+-- IMPORTANTE: declarada como plpgsql (não sql) porque o corpo
+-- referencia tenant_users, que só é criado em 001_tenancy.sql.
+-- Funções SQL validam dependências de tabelas na hora do CREATE;
+-- funções plpgsql só validam quando executadas, então a ordem
+-- entre migrations não é problema.
 -- ============================================================
 CREATE OR REPLACE FUNCTION has_role(required tenant_user_role)
 RETURNS boolean
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE SECURITY DEFINER
 AS $$
-  SELECT EXISTS (
+BEGIN
+  RETURN EXISTS (
     SELECT 1
     FROM tenant_users tu
     WHERE tu.tenant_id = current_tenant_id()
@@ -161,6 +209,7 @@ AS $$
         OR (tu.role = 'admin' AND required != 'owner')
       )
   );
+END;
 $$;
 
 -- ============================================================
@@ -200,11 +249,13 @@ $$;
 -- ============================================================
 -- FUNÇÃO: sha256_hex(val text)
 -- Hash SHA-256 como hex string. Usado para api_key_hash, etc.
+-- SET search_path explícito porque digest() vive em `extensions`.
 -- ============================================================
 CREATE OR REPLACE FUNCTION sha256_hex(val text)
 RETURNS text
 LANGUAGE sql
 IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = public, extensions
 AS $$
   SELECT encode(digest(val, 'sha256'), 'hex');
 $$;

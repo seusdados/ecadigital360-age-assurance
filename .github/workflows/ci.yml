@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  packages-typecheck:
+    name: Typecheck packages/*
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Typecheck @agekey/shared
+        run: pnpm --filter @agekey/shared typecheck
+
+      - name: Typecheck @agekey/adapter-contracts
+        run: pnpm --filter @agekey/adapter-contracts typecheck
+
+  admin-build:
+    name: Admin (Next.js build + typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Typecheck @agekey/admin
+        run: pnpm --filter @agekey/admin typecheck
+
+      - name: Build @agekey/admin
+        env:
+          # Build-time public env vars. Real values configured in Vercel.
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-placeholder
+          NEXT_PUBLIC_AGEKEY_API_BASE: https://example.supabase.co/functions/v1
+          NEXT_PUBLIC_AGEKEY_ISSUER: https://staging.agekey.com.br
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+        run: pnpm --filter @agekey/admin build
+
+  edge-functions-deno:
+    name: Edge Functions (Deno tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Deno version
+        run: deno --version
+
+      - name: Cache dependencies
+        working-directory: supabase/functions
+        run: deno cache _tests/tokens.test.ts _tests/policy-engine.test.ts _tests/fallback-adapter.test.ts _tests/jws-generic.test.ts
+
+      - name: Deno test
+        working-directory: supabase/functions
+        run: deno test -A --no-check _tests/
+
+      - name: Deno typecheck (Edge Functions)
+        working-directory: supabase/functions
+        run: |
+          deno check _shared/tokens.ts
+          deno check _shared/policy-engine.ts
+          deno check _shared/adapters/index.ts
+          deno check _shared/adapters/fallback.ts
+          deno check _shared/adapters/vc.ts
+          deno check _shared/adapters/zkp.ts
+          deno check _shared/adapters/gateway.ts
