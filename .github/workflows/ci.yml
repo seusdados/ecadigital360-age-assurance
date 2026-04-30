@@ -138,7 +138,29 @@ jobs:
   rls-cross-tenant:
     name: Cross-tenant RLS (AK-P0-04)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    services:
+      # supabase/postgres já tem pg_cron, pgcrypto, pgsodium, etc. pré-instalados
+      # em shared_preload_libraries — necessário para as migrations 000/009/010.
+      postgres:
+        image: supabase/postgres:15.8.1.094
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '54322'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -146,24 +168,44 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Start Supabase (mínimo necessário)
-        # Sobe DB + auth + storage para suportar referências auth.users e
-        # FKs do schema. Migrations 000..016 são aplicadas automaticamente.
+      - name: Install psql client
         run: |
-          supabase start \
-            --exclude studio,inbucket,realtime,imgproxy,edge-runtime,logflare,vector,pooler
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 60); do
+            pg_isready -h 127.0.0.1 -p 54322 -U postgres && break
+            sleep 1
+          done
+          pg_isready -h 127.0.0.1 -p 54322 -U postgres
+
+      - name: Postgres diagnostics
+        run: |
+          psql -c "SELECT version();"
+          psql -c "SELECT extname FROM pg_extension ORDER BY extname;"
+          psql -c "SELECT nspname FROM pg_namespace WHERE nspname IN ('auth','storage','vault','extensions','cron') ORDER BY nspname;"
+
+      - name: Pre-migration setup (auth schema, roles, extensions)
+        # Cria auth schema + auth.uid() stub + roles anon/authenticated/service_role
+        # ANTES de aplicar as migrations, para que FKs em auth.users e chamadas
+        # a auth.uid() resolvam.
+        run: |
+          psql -v ON_ERROR_STOP=1 \
+            -f supabase/functions/_tests/_rls_pre_migrate.sql
+
+      - name: Apply migrations 000..016
+        run: |
+          set -e
+          for f in supabase/migrations/*.sql; do
+            echo "→ applying $(basename "$f")"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
 
       - name: Apply RLS test seed
-        env:
-          PGPASSWORD: postgres
         run: |
-          psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
-            -v ON_ERROR_STOP=1 \
+          psql -v ON_ERROR_STOP=1 \
             -f supabase/functions/_tests/_rls_seed.sql
 
       - name: Run cross-tenant RLS suite
@@ -174,7 +216,3 @@ jobs:
         run: |
           deno test --allow-net --allow-env --no-check \
             supabase/functions/_tests/rls-cross-tenant.test.ts
-
-      - name: Stop Supabase
-        if: always()
-        run: supabase stop --no-backup

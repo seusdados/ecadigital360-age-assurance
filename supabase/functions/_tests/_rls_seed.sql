@@ -76,46 +76,32 @@ VALUES
 
 -- ============================================================
 -- VERIFICATION_SESSIONS + CHALLENGES + RESULTS + TOKENS
+--
+-- policy_version_id é resolvido via subquery: o trigger
+-- init_policy_version (009_triggers.sql) cria policy_versions.version=1
+-- automaticamente após o INSERT em policies acima.
 -- ============================================================
-WITH ver_a AS (
-  INSERT INTO verification_sessions (
-    id, tenant_id, application_id, policy_id, policy_version_id,
-    status, method, external_user_ref
-  )
-  SELECT
-    'aaaaaaaa-3000-7000-8000-000000000001',
-    'aaaaaaaa-0000-7000-8000-000000000001',
-    'aaaaaaaa-1000-7000-8000-000000000001',
-    'aaaaaaaa-2000-7000-8000-000000000001',
-    pv.id,
-    'completed',
-    'fallback',
-    'opaque-ref-a'
-  FROM policy_versions pv
-  WHERE pv.policy_id = 'aaaaaaaa-2000-7000-8000-000000000001'
-  ORDER BY pv.version DESC LIMIT 1
-  RETURNING id
-),
-ver_b AS (
-  INSERT INTO verification_sessions (
-    id, tenant_id, application_id, policy_id, policy_version_id,
-    status, method, external_user_ref
-  )
-  SELECT
-    'bbbbbbbb-3000-7000-8000-000000000002',
-    'bbbbbbbb-0000-7000-8000-000000000002',
-    'bbbbbbbb-1000-7000-8000-000000000002',
-    'bbbbbbbb-2000-7000-8000-000000000002',
-    pv.id,
-    'completed',
-    'fallback',
-    'opaque-ref-b'
-  FROM policy_versions pv
-  WHERE pv.policy_id = 'bbbbbbbb-2000-7000-8000-000000000002'
-  ORDER BY pv.version DESC LIMIT 1
-  RETURNING id
+INSERT INTO verification_sessions (
+  id, tenant_id, application_id, policy_id, policy_version_id,
+  status, method, external_user_ref
 )
-SELECT 1 FROM ver_a, ver_b;
+VALUES
+  ('aaaaaaaa-3000-7000-8000-000000000001',
+   'aaaaaaaa-0000-7000-8000-000000000001',
+   'aaaaaaaa-1000-7000-8000-000000000001',
+   'aaaaaaaa-2000-7000-8000-000000000001',
+   (SELECT id FROM policy_versions
+    WHERE policy_id = 'aaaaaaaa-2000-7000-8000-000000000001'
+    ORDER BY version DESC LIMIT 1),
+   'completed', 'fallback', 'opaque-ref-a'),
+  ('bbbbbbbb-3000-7000-8000-000000000002',
+   'bbbbbbbb-0000-7000-8000-000000000002',
+   'bbbbbbbb-1000-7000-8000-000000000002',
+   'bbbbbbbb-2000-7000-8000-000000000002',
+   (SELECT id FROM policy_versions
+    WHERE policy_id = 'bbbbbbbb-2000-7000-8000-000000000002'
+    ORDER BY version DESC LIMIT 1),
+   'completed', 'fallback', 'opaque-ref-b');
 
 INSERT INTO verification_challenges (id, session_id, nonce)
 VALUES
