@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   packages-typecheck:
@@ -288,3 +289,34 @@ jobs:
           name: rls-test-log
           path: /tmp/rls-test.log
           if-no-files-found: warn
+
+      - name: Post RLS log to PR (on failure)
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let log = '';
+            try { log = fs.readFileSync('/tmp/rls-test.log', 'utf8'); }
+            catch (e) { log = 'log file not found: ' + e.message; }
+            const tail = log.slice(-15000);
+            const body = [
+              '<!-- rls-cross-tenant-failure -->',
+              '## ❌ Cross-tenant RLS suite (AK-P0-04) failed',
+              '',
+              'Run: ' + context.runId + ' | Commit: ' + context.sha.slice(0, 7),
+              '',
+              '<details><summary>Last 15KB of deno test stderr/stdout</summary>',
+              '',
+              '```',
+              tail,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
