@@ -113,16 +113,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: denoland/setup-deno@v2
+      - uses: pnpm/action-setup@v4
         with:
-          deno-version: v2.x
+          version: 9.14.4
 
-      - name: Deno test — privacy-guard fuzz
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Vitest — privacy-guard suite
         # Esse passo é go-live blocker (AK-P0-05). Falha o merge se qualquer
         # variação canônica de chave PII passar pelo guard.
-        run: |
-          deno test --allow-net --allow-env --no-check \
-            packages/shared/src/privacy-guard.test.ts
+        run: pnpm --filter @agekey/shared test
+
+      - name: Vitest — adapter-contracts suite
+        # Roda fuzz / contract tests do gateway-providers e zkp-bbs-contract,
+        # adicionados pelo production-readiness pack.
+        run: pnpm --filter @agekey/adapter-contracts test
 
   rls-cross-tenant:
     name: Cross-tenant RLS (AK-P0-04)

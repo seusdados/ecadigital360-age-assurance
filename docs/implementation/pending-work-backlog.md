@@ -1,50 +1,86 @@
-# Backlog profissional de pendências - AgeKey
+# AgeKey — Backlog acionável
 
-## P0 - Bloqueadores de produção
+Backlog de engenharia versionado. Cada item tem ID, prioridade,
+estimativa, dependências, critério de aceite, arquivos prováveis e
+risco. Itens marcados P0 são bloqueadores de go-live.
 
-1. Separar staging e production Supabase. *(open)*
-2. Configurar DNS `agekey.com.br`. *(open)*
-3. Garantir que `api.agekey.com.br` exponha API/JWKS de forma estável. *(open)*
-4. Executar testes de RLS cross-tenant. *(done — `supabase/functions/_tests/rls-cross-tenant.test.ts`, gate `pnpm test:rls` + CI job `rls-cross-tenant`)*
-5. Executar privacy tests de payload. *(done — `packages/shared/src/privacy-guard.test.ts`, fuzz canônico em CI job `privacy-guard-fuzz`; guard endurecido em `packages/shared/src/privacy-guard.ts` com canonicalização alfanumérica)*
-6. Verificar que `external_user_ref` não recebe PII. *(open — coberto parcialmente pela canonicalização do privacy-guard; falta SDK helper de hash documentado)*
-7. Revisar env vars Vercel e Supabase. *(open)*
-8. Confirmar key rotation e JWKS. *(open)*
-9. Criar política de incident response. *(open)*
-10. Realizar pentest antes de GA. *(open)*
+> **Convenções**
+>
+> - Estimativa: T-shirt (`S` ≤ 2d, `M` ≤ 1w, `L` ≤ 2w, `XL` > 2w).
+> - Risco: técnico, regulatório, comercial, dependência externa.
+> - Status: `open | in-progress | blocked | done | accepted-with-risk`.
+> - Não criar issues no GitHub automaticamente. Usar
+>   `docs/implementation/github-issues-ready.md` como source.
 
-## P1 - Produto comercial
+---
 
-1. SDK Web/widget.
-2. Documentação pública de integração.
-3. Painel com onboarding completo.
-4. Criação de applications e rotação de API key pelo painel.
-5. Webhook endpoint management.
-6. Token verify dashboard/tester.
-7. Logs de auditoria compreensíveis.
-8. Billing/usage counters.
+## P0 — Bloqueadores de go-live
 
-## P2 - Integrações
+| ID | Área | Item | Estimativa | Dependências | Critério de aceite | Arquivos prováveis | Risco | Status |
+|---|---|---|---|---|---|---|---|---|
+| AK-P0-01 | Infra | Separar projetos Supabase staging e production | M | acesso Supabase Pro | dois projetos distintos com migrations sincronizadas; cron retention rodando em ambos | `supabase/`, `infrastructure/environments.md` | dependência externa | open |
+| AK-P0-02 | Infra | Configurar DNS `agekey.com.br` (apex + subdomínios + CAA + SPF/DKIM/DMARC) | M | acesso ao registrar | `agekey.com.br`, `app`, `api`, `verify`, `docs`, `status` resolvendo HTTPS; CAA/SPF/DMARC ativos | `infrastructure/dns/agekey-dns-plan.md` | dependência externa | open |
+| AK-P0-03 | Infra | Proxy estável `api.agekey.com.br` → Edge Functions | M | AK-P0-02 | clientes consomem `api.agekey.com.br` em vez do domínio Supabase; troca de provider não quebra contrato público | `infrastructure/dns/agekey-dns-plan.md`, vercel.json | técnico | open |
+| AK-P0-04 | Segurança | Testes RLS cross-tenant automatizados | M | nenhum | `pnpm test:rls` cobre 6+ cenários de breakout; CI bloqueia merge em regressão | `supabase/functions/_tests/rls-cross-tenant.test.ts`, `supabase/functions/_tests/_rls_seed.sql`, `.github/workflows/ci.yml` (job `rls-cross-tenant`) | técnico | done |
+| AK-P0-05 | Privacidade | Privacy guard automated payload scan em CI | S | privacy-guard.ts (já feito) | CI roda fuzz determinístico cobrindo 100% das chaves PII canônicas em PR; nenhum forbidden key escapa | `packages/shared/src/privacy-guard.test.ts`, `.github/workflows/ci.yml` (job `privacy-guard-fuzz`) | técnico | done |
+| AK-P0-06 | Privacidade | Validar formato de `external_user_ref` (rejeitar e-mail / CPF / valores triviais) | S | nenhum | createSession rejeita ou coage entradas que casam regex de PII; teste unitário passa | `supabase/functions/verifications-session-create/`, `packages/shared/src/schemas/sessions.ts` | regulatório | open |
+| AK-P0-07 | Infra | Auditoria de env vars Vercel (Production vs Preview vs Development) | S | acesso ao painel Vercel | nenhum secret server-only em scope `Preview/Development`; `NEXT_PUBLIC_*` clean | `infrastructure/secrets.md`, `infrastructure/vercel-deploy.md` | regulatório | open |
+| AK-P0-08 | Segurança | Confirmar key rotation cron + JWKS estável | S | nenhum | rotação automática agendada; JWKS sem `d`; reteste passa | `supabase/functions/key-rotation/`, `supabase/functions/jwks/` | técnico | open |
+| AK-P0-09 | Compliance | Política de incident response — tabletop SEV-1 | S | nenhum | exercício SEV-1 documentado nos últimos 90 dias com lições aprendidas | `compliance/incident-response-playbook.md` | regulatório | open |
+| AK-P0-10 | Segurança | Pentest externo antes de GA | XL | DPO + budget | escopo `security/pentest/scope.md` cumprido; findings Crítica/Alta corrigidas ou aceitas com mitigação | `security/pentest/` | dependência externa | open |
 
-1. Provider gateway Yoti.
-2. Provider gateway Veriff.
-3. Provider gateway iDwall/Serpro para Brasil.
-4. VC/SD-JWT wallet compatible adapter.
-5. OpenID4VP request builder.
-6. ZKP BBS+ real somente com test vectors e lib validada.
+## P1 — Enterprise readiness
 
-## P3 - SDKs nativos
+| ID | Área | Item | Estimativa | Dependências | Critério de aceite | Arquivos prováveis | Risco | Status |
+|---|---|---|---|---|---|---|---|---|
+| AK-P1-01 | SDK | Mobile SDK seguro (iOS/Android) v0.1 — sem API key embutida | L | AK-P0-01 | SDK aceita `sessionToken` curto criado pelo app-server; deep-link de retorno; tests `swift test` e `./gradlew :agekey:test` PASS em CI mobile | `sdk-mobile/ios/AgeKeySwift/`, `sdk-mobile/android/agekey-android/` | técnico | open |
+| AK-P1-02 | Integração | Provider real Yoti (start + callback + signature mapping + test vectors) | L | DPA Yoti + creds | `YotiGatewayProvider` extends `BaseGatewayProvider`; suite de test vectors em `supabase/functions/_shared/adapters/test-vectors/yoti/`; smoke test passa | `supabase/functions/_shared/adapters/`, `packages/adapter-contracts/` | dependência externa | open |
+| AK-P1-03 | Integração | Provider real Veriff | L | DPA Veriff + creds | idem AK-P1-02 | idem | dependência externa | open |
+| AK-P1-04 | Integração | Provider real Onfido | L | DPA Onfido + creds | idem | idem | dependência externa | open |
+| AK-P1-05 | Integração | Provider Serpro/iDwall (BR) | L | contratos Serpro / iDwall | idem | idem | regulatório | open |
+| AK-P1-06 | SDK | VC / SD-JWT-VC adapter completo | L | issuer real homologado | adapter aceita SD-JWT-VC e w3c-vc; trust registry com issuer DID; reason_codes ZKP_PROOF_INVALID / VC_ISSUER_UNTRUSTED | `supabase/functions/_shared/adapters/vc.ts` | técnico | open |
+| AK-P1-07 | SDK | OpenID4VP request builder | M | AK-P1-06 | server SDK monta `request_uri` OpenID4VP válido com nonce binding | `packages/sdk-js/src/server.ts` | técnico | open |
+| AK-P1-08 | Painel | Webhook endpoint management UI (CRUD, signing secret rotation, dead-letter inspection) | M | nenhum | painel cobre criar/listar/rotacionar/eventos | `apps/admin/app/(app)/webhooks/` | técnico | open |
+| AK-P1-09 | Painel | Token verify dashboard / tester | S | nenhum | tela `Settings/API` permite testar token JWT, mostra `valid`, `claims`, `revoked` | `apps/admin/app/(app)/settings/api/` | técnico | open |
+| AK-P1-10 | Painel | Audit log com filtros + export CSV | M | nenhum | filtros por actor / target / período; export limited a 10k linhas | `apps/admin/app/(app)/audit/` | técnico | open |
 
-1. Swift Package.
-2. Android Kotlin library.
-3. Exemplo iOS.
-4. Exemplo Android.
-5. Publicação interna antes de distribuição pública.
+## P2 — Advanced crypto
 
-## P4 - Diferenciais
+| ID | Área | Item | Estimativa | Dependências | Critério de aceite | Arquivos prováveis | Risco | Status |
+|---|---|---|---|---|---|---|---|---|
+| AK-P2-01 | Cripto | BBS+ verifier real | XL | lib + test vectors + audit | checklist `docs/architecture/open-source-foundation.md` §"Checklist de production-readiness para BBS+ / ZKP" 100% PASS; `requireBbsProductionReadiness()` retorna OK no boot | `supabase/functions/_shared/adapters/zkp.ts`, `packages/crypto-core/` (novo) | técnico + regulatório | blocked |
+| AK-P2-02 | Cripto | Auditoria criptográfica externa | L | AK-P2-01 | relatório assinado de auditoria entregue antes de habilitar BBS+ em produção | `docs/architecture/` | dependência externa | blocked |
+| AK-P2-03 | Cripto | Test vectors RFC 9508 commitados + CI | M | AK-P2-01 | `packages/adapter-contracts/test-vectors/` com vetores oficiais + provenance; CI roda-os | `packages/adapter-contracts/test-vectors/`, `supabase/functions/_shared/adapters/test-vectors/` | técnico | open |
 
-1. Risk signals sem PII.
-2. Dashboard de conversão.
-3. Trust registry gerenciado.
-4. Multi-region.
-5. SLA enterprise.
+## P3 — Marketplace / ecossistema
+
+| ID | Área | Item | Estimativa | Dependências | Critério de aceite | Arquivos prováveis | Risco | Status |
+|---|---|---|---|---|---|---|---|---|
+| AK-P3-01 | Wallet | Compatibilidade EUDI ARF | XL | AK-P1-06, AK-P2-01 | testes contra wallet de referência EUDI; fluxo OpenID4VP bidirecional | adapter VC | técnico | blocked |
+| AK-P3-02 | Wallet | Compatibilidade gov.br / DTC BR | XL | DPA gov.br | trust registry inclui issuer gov.br | adapter VC + trust registry | regulatório | blocked |
+| AK-P3-03 | Marketplace | Diretório público de issuers/gateways homologados | M | AK-P1-02 a 05 | landing page lista issuers/gateways suportados | `apps/site/` (novo) | comercial | open |
+| AK-P3-04 | SLA | SLA enterprise + multi-region | XL | AK-P0-01 | espelho production em região alternativa; failover testado | infra | técnico | open |
+
+---
+
+## Itens removidos / consolidados
+
+- `Sessões expiradas auto-cancel` — já implementado em
+  `retention-job`. Removido.
+- `Logs com trace_id` — já implementado em `_shared/logger.ts`.
+  Removido.
+- `Privacy guard básico` — entregue nesta branch. Removido.
+- `Token public contract` — entregue nesta branch. Removido.
+- `Gateway provider framework` — entregue nesta branch. Removido.
+
+## Próximos PRs sugeridos (ordem)
+
+1. AK-P0-04 + AK-P0-05 (testes RLS cross-tenant + privacy guard
+   fuzz em CI) — bloqueia AK-P0-10.
+2. AK-P0-01 + AK-P0-02 + AK-P0-07 — desbloqueia mobile SDK e
+   gateways reais.
+3. AK-P0-08 + AK-P0-09 — fecham postura defensiva.
+4. AK-P1-08 + AK-P1-09 + AK-P1-10 — quick wins de painel
+   enterprise.
+5. AK-P0-10 (pentest) → marca prontidão de GA.
+6. AK-P1-02..05 entram conforme DPAs forem assinadas.

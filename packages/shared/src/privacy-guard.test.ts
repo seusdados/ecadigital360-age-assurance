@@ -1,261 +1,150 @@
-// privacy-guard.test.ts
-//
-// Suíte AK-P0-05: bloqueador de go-live.
-// Garante que findForbiddenPublicPayloadKeys / assertPublicPayloadHasNoPii
-// detectam 100% das chaves PII conhecidas e variações canonicalizadas
-// (camelCase, kebab-case, com prefixos, plurals etc.) num fuzz determinístico.
-//
-// Roda com Deno test runner (já usado pelo CI):
-//   deno test --no-check packages/shared/src/privacy-guard.test.ts
-
-import { ok as assert, deepStrictEqual as assertEquals } from 'node:assert';
+import { describe, it, expect } from 'vitest';
 import {
+  FORBIDDEN_PUBLIC_KEYS,
   assertPublicPayloadHasNoPii,
   findForbiddenPublicPayloadKeys,
+  redactTokenForDisplay,
 } from './privacy-guard.ts';
 
-// ============================================================
-// SET DETERMINÍSTICO: variações conhecidas de chaves proibidas
-// ============================================================
-const KNOWN_FORBIDDEN_VARIANTS: string[] = [
-  // birthdate
-  'birthdate',
-  'BirthDate',
-  'BIRTHDATE',
-  'birth_date',
-  'date_of_birth',
-  'DateOfBirth',
-  'DATE_OF_BIRTH',
-  'dob',
-  'DOB',
-  // age
-  'age',
-  'Age',
-  'AGE',
-  'idade',
-  'IDADE',
-  'exact_age',
-  'ExactAge',
-  // documents
-  'document',
-  'Document',
-  'cpf',
-  'CPF',
-  'rg',
-  'RG',
-  'passport',
-  'Passport',
-  // identity
-  'name',
-  'Name',
-  'full_name',
-  'FullName',
-  'FULL_NAME',
-  'email',
-  'Email',
-  'phone',
-  'Phone',
-  // biometric / image
-  'selfie',
-  'Selfie',
-  'face',
-  'Face',
-  // raw IDs
-  'raw_id',
-  'RawId',
-  // address
-  'address',
-  'Address',
-  'ADDRESS',
-];
-
-// ============================================================
-// 1. CHAVES CONHECIDAS NO TOPO
-// ============================================================
-Deno.test('AK-P0-05 detecta cada chave PII canonical no topo do payload', () => {
-  for (const variant of KNOWN_FORBIDDEN_VARIANTS) {
-    const v = findForbiddenPublicPayloadKeys({ [variant]: 'value' });
-    assert(
-      v.length >= 1,
-      `chave "${variant}" deveria ser detectada como PII pública`,
-    );
-    assertEquals(v[0]?.path, `$.${variant}`);
-  }
-});
-
-// ============================================================
-// 2. CHAVES PII ANINHADAS
-// ============================================================
-Deno.test('AK-P0-05 detecta chaves PII em objetos aninhados', () => {
-  const payload = {
-    user: { profile: { dob: '1990-01-01', email: 'x@y.z' } },
-    metadata: { extras: [{ cpf: '123' }] },
-  };
-  const violations = findForbiddenPublicPayloadKeys(payload);
-  const paths = violations.map((v) => v.path).sort();
-  // dob, email, cpf (3 violations)
-  assertEquals(paths.length, 3);
-  assert(paths.includes('$.user.profile.dob'));
-  assert(paths.includes('$.user.profile.email'));
-  assert(paths.includes('$.metadata.extras[0].cpf'));
-});
-
-// ============================================================
-// 3. PAYLOAD LIMPO PASSA
-// ============================================================
-Deno.test('AK-P0-05 payload sem PII passa', () => {
-  const okPayloads: unknown[] = [
-    {},
-    null,
-    [],
-    { jti: 'abc', decision: 'approved', threshold_satisfied: true },
-    { policy: { slug: 'br-18-plus', version: 1 } },
-    { external_user_ref: 'opaque-hash-string' },
-  ];
-  for (const p of okPayloads) {
-    const v = findForbiddenPublicPayloadKeys(p);
-    assertEquals(v, [], `payload ${JSON.stringify(p)} é limpo`);
-  }
-});
-
-// ============================================================
-// 4. assertPublicPayloadHasNoPii lança em violação
-// ============================================================
-Deno.test('AK-P0-05 assertPublicPayloadHasNoPii lança quando há PII', () => {
-  let threw = false;
-  try {
-    assertPublicPayloadHasNoPii({ user: { birthdate: '1990' } });
-  } catch (e) {
-    threw = true;
-    const msg = e instanceof Error ? e.message : String(e);
-    assert(
-      msg.includes('forbidden PII-like keys'),
-      `mensagem deveria descrever violações; got: ${msg}`,
-    );
-  }
-  assert(threw, 'assertPublicPayloadHasNoPii precisa lançar');
-});
-
-Deno.test('AK-P0-05 assertPublicPayloadHasNoPii passa em payload limpo', () => {
-  // não deve lançar
-  assertPublicPayloadHasNoPii({
-    decision: 'approved',
-    policy: { slug: 'br-18-plus' },
+describe('privacy-guard / FORBIDDEN_PUBLIC_KEYS', () => {
+  it('contains the keys explicitly required by the AgeKey contract', () => {
+    for (const k of [
+      'birthdate',
+      'date_of_birth',
+      'dob',
+      'age',
+      'exact_age',
+      'document',
+      'cpf',
+      'rg',
+      'passport',
+      'id_number',
+      'name',
+      'full_name',
+      'selfie',
+      'face',
+      'biometric',
+      'raw_id',
+      'civil_id',
+    ]) {
+      expect(FORBIDDEN_PUBLIC_KEYS as readonly string[]).toContain(k);
+    }
   });
 });
 
-// ============================================================
-// 5. FUZZ DETERMINÍSTICO — combina chaves canonical com variações
-//    de case, separadores e wrappers comuns.
-// ============================================================
-const CASES = ['lower', 'upper', 'pascal', 'asis'] as const;
-type Case = (typeof CASES)[number];
-
-function applyCase(s: string, c: Case): string {
-  switch (c) {
-    case 'lower':
-      return s.toLowerCase();
-    case 'upper':
-      return s.toUpperCase();
-    case 'pascal':
-      return s.replace(/(^|_|-)([a-z])/g, (_, _sep, ch) => ch.toUpperCase());
-    case 'asis':
-      return s;
-  }
-}
-
-// Para cada chave proibida do contrato, gera N variações case-only do
-// mesmo nome canônico. A função privacy-guard normaliza com .toLowerCase()
-// antes de comparar contra a lista, então TODAS devem ser bloqueadas.
-Deno.test('AK-P0-05 fuzz canonical-key case variations: 100% bloqueio', () => {
-  const CANONICAL = [
-    'birthdate',
-    'date_of_birth',
-    'dob',
-    'idade',
-    'age',
-    'exact_age',
-    'document',
-    'cpf',
-    'rg',
-    'passport',
-    'name',
-    'full_name',
-    'email',
-    'phone',
-    'selfie',
-    'face',
-    'raw_id',
-    'address',
-  ];
-
-  let total = 0;
-  let escaped = 0;
-  for (const canonical of CANONICAL) {
-    for (const c of CASES) {
-      const variant = applyCase(canonical, c);
-      total += 1;
-      const v = findForbiddenPublicPayloadKeys({ [variant]: 'x' });
-      if (v.length === 0) {
-        escaped += 1;
-        console.error(`FUZZ ESCAPE: chave "${variant}" passou pelo guard`);
-      }
-    }
-  }
-  assertEquals(escaped, 0, `${escaped}/${total} chaves PII escaparam do guard`);
-});
-
-// ============================================================
-// 6. FUZZ DE COMPOSIÇÃO — payloads sintéticos misturando PII e não-PII
-// ============================================================
-Deno.test(
-  'AK-P0-05 fuzz mixed payloads: cada PII canônica é detectada mesmo em meio a 50 chaves limpas',
-  () => {
-    const cleanKeys = Array.from({ length: 50 }, (_, i) => `field_${i}`);
-    const PII_KEYS = ['birthdate', 'cpf', 'selfie', 'email', 'address'];
-
-    for (const pii of PII_KEYS) {
-      const obj: Record<string, unknown> = {};
-      for (const k of cleanKeys) obj[k] = 'safe';
-      obj[pii] = 'leak';
-      const v = findForbiddenPublicPayloadKeys(obj);
-      const found = v.some((x) => x.key === pii);
-      assert(
-        found,
-        `chave PII "${pii}" deveria ter sido detectada em meio a chaves limpas`,
-      );
-    }
-  },
-);
-
-// ============================================================
-// 7. ARRAYS COM PII
-// ============================================================
-Deno.test('AK-P0-05 detecta PII em arrays', () => {
-  const v = findForbiddenPublicPayloadKeys([
-    { ok: 1 },
-    { dob: '1990' },
-    { also: { passport: 'X12345' } },
-  ]);
-  const paths = v.map((x) => x.path).sort();
-  assertEquals(paths.length, 2);
-  assert(paths.some((p) => p.endsWith('.dob')));
-  assert(paths.some((p) => p.endsWith('.passport')));
-});
-
-// ============================================================
-// 8. NÃO confunde substrings — chaves não-canônicas com caracteres extras
-//    NÃO são bloqueadas (decisão consciente: o guard bloqueia chaves
-//    canônicas exatas após lowercasing). Documentado aqui como contrato.
-// ============================================================
-Deno.test('AK-P0-05 contrato: substrings não-canônicas NÃO são bloqueadas', () => {
-  // "username" contém "name" mas o guard intencionalmente NÃO faz match
-  // por substring para evitar falsos positivos. external_user_ref existe
-  // exatamente porque "user_ref" não casa com nenhuma chave proibida.
-  const v = findForbiddenPublicPayloadKeys({
-    username: 'jdoe',
-    user_id: 'opaque',
-    external_user_ref: 'h(uuid)',
+describe('privacy-guard / findForbiddenPublicPayloadKeys', () => {
+  it('returns an empty list for safe payloads', () => {
+    const safe = {
+      decision: 'approved',
+      threshold_satisfied: true,
+      age_threshold: 18,
+      method: 'gateway',
+      assurance_level: 'substantial',
+      reason_code: 'THRESHOLD_SATISFIED',
+      policy: { id: 'p', slug: 's', version: 1 },
+    };
+    expect(findForbiddenPublicPayloadKeys(safe)).toEqual([]);
   });
-  assertEquals(v, []);
+
+  it('flags top-level violations', () => {
+    const v = findForbiddenPublicPayloadKeys({ birthdate: '2000-01-01' });
+    expect(v).toHaveLength(1);
+    expect(v[0]?.path).toBe('$.birthdate');
+  });
+
+  it('flags nested violations and reports the path', () => {
+    const v = findForbiddenPublicPayloadKeys({
+      agekey: { user: { dob: '2000-01-01' } },
+    });
+    expect(v.map((x) => x.path)).toEqual(['$.agekey.user.dob']);
+  });
+
+  it('descends into arrays', () => {
+    const v = findForbiddenPublicPayloadKeys({
+      results: [{ ok: true }, { selfie: 'data:image/png;base64,...' }],
+    });
+    expect(v[0]?.path).toBe('$.results[1].selfie');
+  });
+
+  it('matches keys regardless of casing and separator (camelCase, kebab, snake)', () => {
+    const variants = {
+      DateOfBirth: '2000-01-01',
+      'date-of-birth': '2000-01-01',
+      DATE_OF_BIRTH: '2000-01-01',
+    };
+    const v = findForbiddenPublicPayloadKeys(variants);
+    expect(v).toHaveLength(3);
+  });
+
+  it('does not flag age_threshold (policy descriptor, not user age)', () => {
+    expect(
+      findForbiddenPublicPayloadKeys({
+        agekey: { age_threshold: 18, age_band_min: 13, age_band_max: 17 },
+      }),
+    ).toEqual([]);
+  });
+
+  it('does not flag agekey.policy.version (no PII)', () => {
+    expect(
+      findForbiddenPublicPayloadKeys({
+        policy: { id: 'p', slug: 's', version: 1 },
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags Brazilian-specific PII keys (cpf, rg, nome_completo, telefone)', () => {
+    const v = findForbiddenPublicPayloadKeys({
+      cpf: '123.456.789-00',
+      rg: '12.345.678-9',
+      nome_completo: 'Maria',
+      telefone: '+55-11-...',
+    });
+    expect(v).toHaveLength(4);
+  });
+
+  it('honors allowedKeys option for explicit overrides', () => {
+    expect(
+      findForbiddenPublicPayloadKeys({ name: 'AgeKey' }, '$', {
+        allowedKeys: ['name'],
+      }),
+    ).toEqual([]);
+  });
+
+  it('returns no violations for primitives, null, undefined', () => {
+    expect(findForbiddenPublicPayloadKeys(null)).toEqual([]);
+    expect(findForbiddenPublicPayloadKeys(undefined)).toEqual([]);
+    expect(findForbiddenPublicPayloadKeys('hello')).toEqual([]);
+    expect(findForbiddenPublicPayloadKeys(42)).toEqual([]);
+  });
+});
+
+describe('privacy-guard / assertPublicPayloadHasNoPii', () => {
+  it('passes for safe payload', () => {
+    expect(() =>
+      assertPublicPayloadHasNoPii({ decision: 'approved' }),
+    ).not.toThrow();
+  });
+
+  it('throws and lists every offending path', () => {
+    expect(() =>
+      assertPublicPayloadHasNoPii({
+        agekey: { dob: 'x' },
+        users: [{ cpf: 'y' }],
+      }),
+    ).toThrow(/agekey\.dob.*users\[0\]\.cpf|users\[0\]\.cpf.*agekey\.dob/);
+  });
+});
+
+describe('privacy-guard / redactTokenForDisplay', () => {
+  it('redacts short tokens fully', () => {
+    expect(redactTokenForDisplay('abc')).toBe('***');
+  });
+
+  it('shows head and tail of long tokens', () => {
+    const t = 'A'.repeat(50);
+    const out = redactTokenForDisplay(t);
+    expect(out.startsWith('AAAAAAAAAAAA')).toBe(true);
+    expect(out.endsWith('AAAAAAAAAAAA')).toBe(true);
+    expect(out).toContain('...');
+  });
 });

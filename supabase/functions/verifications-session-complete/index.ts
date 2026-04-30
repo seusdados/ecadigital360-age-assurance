@@ -27,6 +27,7 @@ import { getAdapter, AdapterDenied } from '../_shared/adapters/index.ts';
 import { config } from '../_shared/env.ts';
 import { SessionCompleteRequestSchema } from '../../../packages/shared/src/schemas/sessions.ts';
 import { REASON_CODES } from '../../../packages/shared/src/reason-codes.ts';
+import { assertPublicPayloadHasNoPii } from '../../../packages/shared/src/privacy-guard.ts';
 
 const FN = 'verifications-session-complete';
 
@@ -215,6 +216,11 @@ serve(async (req) => {
         },
       };
 
+      // Defense in depth: assert the claims don't contain any PII-shaped key
+      // before signing — this is the last point we can refuse to mint a token
+      // that would leak data to a client.
+      assertPublicPayloadHasNoPii(claims);
+
       const jwt = await signResultToken(claims, signingKey);
       signedToken = { jwt, jti: tokenRow.jti, expires_at: expIso, kid: signingKey.kid };
     }
@@ -261,18 +267,17 @@ serve(async (req) => {
       status: 200,
     });
 
-    return jsonResponse(
-      {
-        session_id: session.id,
-        status: 'completed',
-        decision: finalDecision,
-        reason_code: finalReason,
-        method: adapterResult.method,
-        assurance_level: adapterResult.assurance_level,
-        token: signedToken,
-      },
-      { origin },
-    );
+    const responseBody = {
+      session_id: session.id,
+      status: 'completed' as const,
+      decision: finalDecision,
+      reason_code: finalReason,
+      method: adapterResult.method,
+      assurance_level: adapterResult.assurance_level,
+      token: signedToken,
+    };
+    assertPublicPayloadHasNoPii(responseBody);
+    return jsonResponse(responseBody, { origin });
   } catch (err) {
     return respondError(fnCtx, err);
   }

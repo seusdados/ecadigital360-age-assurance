@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "test:rls": "deno test --allow-net --allow-env --no-check supabase/functions/_tests/rls-cross-tenant.test.ts",
-    "test:privacy": "deno test --allow-net --allow-env --no-check packages/shared/src/privacy-guard.test.ts",
+    "test:privacy": "pnpm --filter @agekey/shared test",
     "test:integration": "turbo run test:integration",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
