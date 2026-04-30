@@ -2,7 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 import { agekey, AgeKeyApiError } from '@/lib/agekey/client';
+import { requireTenantContext } from '@/lib/agekey/tenant';
 import { SharedApplicationWriteRequestSchema as ApplicationWriteRequestSchema } from '@/lib/validations/applications';
+
+// Roles permitidas a mutar applications (criar/atualizar/rotacionar chave).
+// auditor/billing/operator podem ler mas nunca escrever.
+const APP_WRITE_ROLES = new Set(['owner', 'admin']);
 
 type FieldErrors = Partial<
   Record<
@@ -56,10 +61,18 @@ function parseFormData(formData: FormData): RawFormPayload {
   const webhookUrl = formData.get('webhook_url');
   const allowedOriginsRaw = formData.get('allowed_origins');
 
-  const allowed_origins =
-    typeof allowedOriginsRaw === 'string' && allowedOriginsRaw.length > 0
-      ? (JSON.parse(allowedOriginsRaw) as unknown)
-      : [];
+  // allowed_origins vem JSON-encoded do form. Em caso de payload corrompido
+  // (cliente tampered, network glitch, etc.), JSON.parse lança SyntaxError —
+  // capturamos e devolvemos array vazio pra caller tratar via Zod validation
+  // (em vez de derrubar a action com 500). Codex P2.
+  let allowed_origins: unknown = [];
+  if (typeof allowedOriginsRaw === 'string' && allowedOriginsRaw.length > 0) {
+    try {
+      allowed_origins = JSON.parse(allowedOriginsRaw);
+    } catch {
+      allowed_origins = [];
+    }
+  }
 
   return {
     id: typeof id === 'string' && id.length > 0 ? id : undefined,
@@ -102,6 +115,17 @@ function mapApiError(err: unknown, defaultMessage: string): string {
 export async function createApplicationAction(
   formData: FormData,
 ): Promise<CreateApplicationActionResult> {
+  // Tenant + role guard. AGEKEY_ADMIN_API_KEY tem acesso total a TODAS as
+  // applications do tenant; sem este check, qualquer member autenticado podia
+  // criar/editar via Server Action. Codex P1.
+  const ctx = await requireTenantContext();
+  if (!APP_WRITE_ROLES.has(ctx.role)) {
+    return {
+      ok: false,
+      error: 'Você não tem permissão para criar aplicações. Peça a um admin do tenant.',
+    };
+  }
+
   const raw = parseFormData(formData);
   const parsed = ApplicationWriteRequestSchema.safeParse({
     name: raw.name,
@@ -145,6 +169,14 @@ export async function createApplicationAction(
 export async function updateApplicationAction(
   formData: FormData,
 ): Promise<UpdateApplicationActionResult> {
+  const ctx = await requireTenantContext();
+  if (!APP_WRITE_ROLES.has(ctx.role)) {
+    return {
+      ok: false,
+      error: 'Você não tem permissão para editar aplicações. Peça a um admin do tenant.',
+    };
+  }
+
   const raw = parseFormData(formData);
   if (!raw.id) {
     return { ok: false, error: 'Identificador da aplicação ausente.' };
@@ -182,6 +214,14 @@ export async function updateApplicationAction(
 export async function rotateKeyAction(
   applicationId: string,
 ): Promise<RotateKeyActionResult> {
+  const ctx = await requireTenantContext();
+  if (!APP_WRITE_ROLES.has(ctx.role)) {
+    return {
+      ok: false,
+      error: 'Você não tem permissão para rotacionar chaves. Peça a um admin do tenant.',
+    };
+  }
+
   if (!applicationId) {
     return { ok: false, error: 'Identificador da aplicação ausente.' };
   }
