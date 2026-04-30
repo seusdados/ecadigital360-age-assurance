@@ -132,6 +132,10 @@ export interface IssuerListItem {
   scope: 'global' | 'tenant';
 }
 
+// ---------------------------------------------------------------
+// APPLICATIONS (Slice 4)
+// ---------------------------------------------------------------
+
 export interface ApplicationListItem {
   id: string;
   slug: string;
@@ -169,6 +173,40 @@ export interface ApplicationRotateKeyResult {
   api_key: string;
   api_key_prefix: string;
   rotated_at: string;
+}
+
+// ---------------------------------------------------------------
+// AUDIT (Slice 5)
+// ---------------------------------------------------------------
+
+export type AuditActorType = 'user' | 'api_key' | 'system' | 'cron';
+
+export interface AuditEventItem {
+  id: string;
+  actor_type: AuditActorType;
+  actor_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  diff_json: Record<string, unknown>;
+  client_ip: string | null;
+  created_at: string;
+}
+
+export interface AuditListResponse {
+  items: AuditEventItem[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface AuditListParams {
+  action?: string;
+  resource_type?: string;
+  actor_type?: AuditActorType;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 export const agekey = {
@@ -222,6 +260,20 @@ export const agekey = {
         mime_type: string | null;
         size_bytes: number | null;
       }>('/proof-artifact-url', { method: 'POST', body: { artifact_id } }),
+  },
+  audit: {
+    list: (params: AuditListParams = {}) =>
+      request<AuditListResponse>('/audit-list', {
+        query: {
+          action: params.action,
+          resource_type: params.resource_type,
+          actor_type: params.actor_type,
+          from: params.from,
+          to: params.to,
+          cursor: params.cursor,
+          limit: params.limit,
+        },
+      }),
   },
 };
 

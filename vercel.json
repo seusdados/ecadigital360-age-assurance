@@ -2,5 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm --filter @agekey/admin build",
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "outputDirectory": "apps/admin/.next"
+  "outputDirectory": ".next"
 }
