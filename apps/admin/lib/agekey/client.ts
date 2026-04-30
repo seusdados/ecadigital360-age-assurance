@@ -133,7 +133,50 @@ export interface IssuerListItem {
 }
 
 // ---------------------------------------------------------------
-// AUDIT
+// APPLICATIONS (Slice 4)
+// ---------------------------------------------------------------
+
+export interface ApplicationListItem {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  status: 'active' | 'inactive' | 'suspended';
+  api_key_prefix: string;
+  callback_url: string | null;
+  webhook_url: string | null;
+  allowed_origins: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplicationWriteInput {
+  id?: string;
+  name: string;
+  slug: string;
+  description?: string;
+  callback_url?: string;
+  webhook_url?: string;
+  allowed_origins?: string[];
+}
+
+export interface ApplicationWriteResult {
+  id: string;
+  status: 'created' | 'updated';
+  // Raw secrets returned ONLY on create. On update both fields are null.
+  api_key: string | null;
+  webhook_secret: string | null;
+}
+
+export interface ApplicationRotateKeyResult {
+  application_id: string;
+  api_key: string;
+  api_key_prefix: string;
+  rotated_at: string;
+}
+
+// ---------------------------------------------------------------
+// AUDIT (Slice 5)
 // ---------------------------------------------------------------
 
 export type AuditActorType = 'user' | 'api_key' | 'system' | 'cron';
@@ -185,6 +228,20 @@ export const agekey = {
       request<{ id: string; status: 'created' | 'updated' }>('/issuers-register', {
         method: 'POST',
         body,
+      }),
+  },
+  applications: {
+    list: () =>
+      request<{ items: ApplicationListItem[] }>('/applications-list'),
+    write: (body: ApplicationWriteInput) =>
+      request<ApplicationWriteResult>('/applications-write', {
+        method: 'POST',
+        body,
+      }),
+    rotateKey: (application_id: string) =>
+      request<ApplicationRotateKeyResult>('/applications-rotate-key', {
+        method: 'POST',
+        body: { application_id },
       }),
   },
   tokens: {
