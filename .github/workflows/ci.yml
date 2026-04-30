@@ -81,12 +81,21 @@ jobs:
 
       - name: Cache dependencies
         working-directory: supabase/functions
-        run: deno cache _tests/tokens.test.ts _tests/policy-engine.test.ts _tests/fallback-adapter.test.ts _tests/jws-generic.test.ts
+        run: |
+          deno cache \
+            _tests/tokens.test.ts \
+            _tests/policy-engine.test.ts \
+            _tests/fallback-adapter.test.ts \
+            _tests/jws-generic.test.ts \
+            _tests/jwks-endpoint.test.ts \
+            _tests/key-rotation-logic.test.ts
 
       - name: Deno test (Edge Functions unit suites)
         working-directory: supabase/functions
         # Roda apenas as suites unit (excluindo a integração rls-cross-tenant,
         # que requer Postgres + auth schema e roda em job próprio).
+        # AK-P0-08: jwks-endpoint + key-rotation-logic protegem o invariante
+        # "JWKS nunca expõe `d`" e a corretude do planner de rotação.
         run: |
           deno test -A --no-check \
             _tests/tokens.test.ts \
@@ -95,7 +104,9 @@ jobs:
             _tests/jws-generic.test.ts \
             _tests/credentials.test.ts \
             _tests/zkp-adapter.test.ts \
-            _tests/gateway-adapter.test.ts
+            _tests/gateway-adapter.test.ts \
+            _tests/jwks-endpoint.test.ts \
+            _tests/key-rotation-logic.test.ts
 
       - name: Deno typecheck (Edge Functions)
         working-directory: supabase/functions
@@ -110,7 +121,8 @@ jobs:
           for f in _shared/tokens.ts _shared/policy-engine.ts \
                    _shared/adapters/index.ts _shared/adapters/fallback.ts \
                    _shared/adapters/vc.ts _shared/adapters/zkp.ts \
-                   _shared/adapters/gateway.ts; do
+                   _shared/adapters/gateway.ts \
+                   _shared/jwks-response.ts _shared/key-rotation-logic.ts; do
             log="/tmp/deno-check/${f//\//_}.log"
             echo "→ deno check $f"
             if ! deno check "$f" > "$log" 2>&1; then
