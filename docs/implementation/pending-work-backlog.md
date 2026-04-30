@@ -26,7 +26,7 @@ risco. Itens marcados P0 são bloqueadores de go-live.
 | AK-P0-06 | Privacidade | Validar formato de `external_user_ref` (rejeitar e-mail / CPF / valores triviais) | S | nenhum | createSession rejeita ou coage entradas que casam regex de PII; teste unitário passa | `supabase/functions/verifications-session-create/`, `packages/shared/src/schemas/sessions.ts` | regulatório | open |
 | AK-P0-07 | Infra | Auditoria de env vars Vercel (Production vs Preview vs Development) | S | acesso ao painel Vercel | nenhum secret server-only em scope `Preview/Development`; `NEXT_PUBLIC_*` clean | `infrastructure/secrets.md`, `infrastructure/vercel-deploy.md` | regulatório | open |
 | AK-P0-08 | Segurança | Confirmar key rotation cron + JWKS estável | S | nenhum | rotação automática agendada; JWKS sem `d`; reteste passa | `supabase/functions/key-rotation/`, `supabase/functions/jwks/` | técnico | open |
-| AK-P0-09 | Compliance | Política de incident response — tabletop SEV-1 | S | nenhum | exercício SEV-1 documentado nos últimos 90 dias com lições aprendidas | `compliance/incident-response-playbook.md` | regulatório | open |
+| AK-P0-09 | Compliance | Política de incident response — tabletop SEV-1 | S | nenhum | exercício SEV-1 documentado nos últimos 90 dias com lições aprendidas | `compliance/incident-response-playbook.md`, `compliance/post-mortems/`, `compliance/tabletops/`, `compliance/oncall/` | regulatório | in-progress (doc done; tabletop SEV-1 = ação humana) |
 | AK-P0-10 | Segurança | Pentest externo antes de GA | XL | DPO + budget | escopo `security/pentest/scope.md` cumprido; findings Crítica/Alta corrigidas ou aceitas com mitigação | `security/pentest/` | dependência externa | open |
 
 ## P1 — Enterprise readiness
