@@ -1,8 +1,5 @@
 'use client';
 
-// Client component: wraps @radix-ui/react-dialog primitives. Used wherever
-// a modal-style overlay is needed (e.g., revoke token confirmation).
-
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import {
@@ -35,34 +32,44 @@ const DialogOverlay = forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+interface DialogContentProps
+  extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  hideCloseButton?: boolean;
+}
+
 const DialogContent = forwardRef<
   ElementRef<typeof DialogPrimitive.Content>,
-  ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  DialogContentProps
+>(({ className, children, hideCloseButton = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
-        'rounded-lg border border-border bg-card p-6 shadow-lg',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'fixed left-1/2 top-1/2 z-50 grid w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 gap-4',
+        'border border-border bg-card p-6 shadow-lg sm:rounded-lg',
+        'max-h-[92vh] overflow-y-auto',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
+        'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close
-        className={cn(
-          'absolute right-4 top-4 rounded-sm text-muted-foreground transition-opacity',
-          'hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        )}
-        aria-label="Fechar"
-      >
-        <X className="h-4 w-4" aria-hidden="true" />
-      </DialogPrimitive.Close>
+      {!hideCloseButton ? (
+        <DialogPrimitive.Close
+          className={cn(
+            'absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity',
+            'hover:opacity-100',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'disabled:pointer-events-none',
+          )}
+          aria-label="Fechar"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </DialogPrimitive.Close>
+      ) : null}
     </DialogPrimitive.Content>
   </DialogPortal>
 ));
@@ -76,18 +83,20 @@ function DialogHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
     />
   );
 }
+DialogHeader.displayName = 'DialogHeader';
 
 function DialogFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        'mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+        'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
         className,
       )}
       {...props}
     />
   );
 }
+DialogFooter.displayName = 'DialogFooter';
 
 const DialogTitle = forwardRef<
   ElementRef<typeof DialogPrimitive.Title>,
@@ -95,7 +104,7 @@ const DialogTitle = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-md font-thin', className)}
+    className={cn('text-md font-thin leading-none', className)}
     {...props}
   />
 ));
@@ -115,11 +124,13 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 export {
   Dialog,
+  DialogPortal,
+  DialogOverlay,
   DialogTrigger,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogFooter,
   DialogTitle,
   DialogDescription,
-  DialogClose,
 };
