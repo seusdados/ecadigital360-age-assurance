@@ -187,17 +187,44 @@ psql "$SUPABASE_DB_URL_STAGING" \
   -f supabase/seed/03_policies_default.sql
 ```
 
-Em **produção**, os seeds 01–03 **não rodam via psql manual**. O bootstrap inicial usa a Edge Function `tenant-bootstrap` (cria o primeiro tenant + admin owner) chamada após o key-rotation cron já ter populado uma chave ativa em `crypto_keys`. Procedimento:
+Em **produção** o bootstrap é uma sequência controlada — não há Edge Function "seed bootstrap" e nunca aplicamos `04_dev_tenant.sql`. Os seeds estruturais 01–03 são idempotentes (todos têm `ON CONFLICT DO NOTHING`) e podem rodar via psql sob a service-role connection com janela de manutenção. Procedimento:
 
-1. Aplicar migrations (`./supabase/scripts/migrate.sh --env prod`)
-2. Configurar GUCs (`app.functions_url`, `app.cron_secret`) — ver seção Cron retention
-3. Disparar key-rotation manualmente uma vez:
+1. Aplicar migrations:
+   ```bash
+   ./supabase/scripts/migrate.sh --env prod
+   ```
+2. Configurar GUCs (`app.functions_url`, `app.cron_secret`) — ver seção Cron retention.
+3. Aplicar seeds estruturais (somente 01–03; **NÃO** aplicar 04):
+   ```bash
+   psql "$SUPABASE_DB_URL_PROD" \
+     -v ON_ERROR_STOP=1 \
+     -f supabase/seed/01_jurisdictions.sql \
+     -f supabase/seed/02_trust_registry.sql \
+     -f supabase/seed/03_policies_default.sql
+   ```
+   Os arquivos populam apenas `jurisdictions`, `issuers` globais (`tenant_id IS NULL`) e `policies` template (`is_template = true`) — nada relativo a tenant real.
+4. Disparar key-rotation uma vez para popular `crypto_keys` com uma chave ativa antes do primeiro token ser emitido:
    ```bash
    curl -X POST https://<prod-ref>.supabase.co/functions/v1/key-rotation \
      -H "Authorization: Bearer $CRON_SECRET_PROD"
    ```
-4. Inserir jurisdições / trust registry / policies via Edge Function admin (`POST /admin/seed-bootstrap` — protegido por `AGEKEY_ADMIN_API_KEY`)
-5. Criar primeiro `tenant` via `tenant-bootstrap` (com owner inicial autenticado pelo painel)
+5. Validar JWKS público:
+   ```bash
+   curl -fsS https://<prod-ref>.supabase.co/functions/v1/jwks | jq '.keys | length'
+   # esperado: >= 1
+   ```
+6. Criar o primeiro tenant + owner via Edge Function `tenant-bootstrap`. Essa função é a única forma legítima de criar tenant em prod (RLS bloqueia INSERT direto por usuário, e o trigger de auditoria espera contexto). Chamada autenticada pelo `AGEKEY_ADMIN_API_KEY` (server-only):
+   ```bash
+   curl -X POST https://<prod-ref>.supabase.co/functions/v1/tenant-bootstrap \
+     -H "X-AgeKey-Admin-Key: $AGEKEY_ADMIN_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "tenant": { "name": "Cliente X", "slug": "cliente-x", "plan": "pro" },
+       "owner": { "email": "owner@cliente-x.com" }
+     }'
+   ```
+   Resposta inclui o `tenant_id`, o convite do owner e (uma única vez) a primeira `application` + raw API key. Guardar e rotacionar pelo painel quando o owner aceitar o convite.
+7. A partir desse ponto, o painel admin (`app.agekey.com.br`) cobre criação de novas applications, policies tenant-específicas (clones dos templates de 03) e issuers via `applications-write`, `policies-write` e `issuers-register`.
 
 ---
 

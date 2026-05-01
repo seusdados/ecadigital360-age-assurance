@@ -173,23 +173,48 @@ echo "→ Migrations pendentes:"
 PENDING_OUTPUT="$(supabase migration list --db-url "$DB_URL" 2>&1 || true)"
 echo "$PENDING_OUTPUT"
 
-# Detecta migrations locais ainda não aplicadas (tem timestamp local mas não remoto)
-PENDING_FILES=()
-while IFS= read -r line; do
-  PENDING_FILES+=("$line")
-done < <(supabase migration list --db-url "$DB_URL" 2>/dev/null \
-  | awk '/^\s*[0-9]+\s+\|\s*$/ {print $1}' || true)
+# Extrai timestamps das migrations locais ainda não aplicadas remotamente.
+# `supabase migration list` formata cada linha como:
+#   "  <local-ts>   |   <remote-ts>   |   <name>"
+# Pendente = local presente, remote vazio.
+PENDING_TIMESTAMPS=()
+while IFS= read -r ts; do
+  [[ -z "$ts" ]] && continue
+  PENDING_TIMESTAMPS+=("$ts")
+done < <(
+  echo "$PENDING_OUTPUT" \
+    | awk -F'|' '
+        /^[[:space:]]*[0-9]{14}/ {
+          gsub(/[[:space:]]/, "", $1)
+          gsub(/[[:space:]]/, "", $2)
+          if ($1 != "" && $2 == "") print $1
+        }
+      '
+)
 
 # ---------- guard de destrutividade ----------
+# Restrito a migrations PENDENTES — sem isso, o `DROP TABLE IF EXISTS %I`
+# que vive dentro do body de funções já mergeadas (ex.:
+# 010_edge_support.sql:135 em drop_partition()) dispara o guard em todo
+# run, bloqueando até dry-runs com `--confirm-destructive` desnecessário.
 DESTRUCTIVE_PATTERNS='(DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN|DROP[[:space:]]+SCHEMA|TRUNCATE[[:space:]]|DELETE[[:space:]]+FROM[[:space:]]+[a-zA-Z_]+[[:space:]]*;|ALTER[[:space:]]+TABLE[[:space:]]+[a-zA-Z_.]+[[:space:]]+DROP)'
 
 DESTRUCTIVE_HITS=""
-if compgen -G "supabase/migrations/*.sql" > /dev/null; then
-  # Em modo staging/prod o conjunto de migrations relevantes são todos os
-  # arquivos versionados; em produção real, supabase db push só aplica os
-  # pendentes. O guard aqui é conservador — se QUALQUER migration tem
-  # padrão destrutivo e não confirmado, bloqueia a execução.
-  DESTRUCTIVE_HITS="$(grep -nEi "$DESTRUCTIVE_PATTERNS" supabase/migrations/*.sql || true)"
+if [[ ${#PENDING_TIMESTAMPS[@]} -gt 0 ]]; then
+  # Resolve cada timestamp para o arquivo concreto em supabase/migrations/.
+  # supabase CLI aceita tanto `<ts>_<name>.sql` (novo) quanto `<NNN>_<name>.sql`
+  # (legado, ainda em uso aqui). Prefixo `<ts>_*` cobre o formato atual; se
+  # não casar, faz fallback amplo.
+  PENDING_FILES=()
+  for ts in "${PENDING_TIMESTAMPS[@]}"; do
+    while IFS= read -r f; do
+      PENDING_FILES+=("$f")
+    done < <(compgen -G "supabase/migrations/${ts}_*.sql" || true)
+  done
+
+  if [[ ${#PENDING_FILES[@]} -gt 0 ]]; then
+    DESTRUCTIVE_HITS="$(grep -nEi "$DESTRUCTIVE_PATTERNS" "${PENDING_FILES[@]}" || true)"
+  fi
 fi
 
 if [[ -n "$DESTRUCTIVE_HITS" && $CONFIRM_DESTRUCTIVE -ne 1 ]]; then
