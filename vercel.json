@@ -3,18 +3,9 @@
   "buildCommand": "pnpm --filter @agekey/admin build",
   "installCommand": "pnpm install --no-frozen-lockfile",
   "outputDirectory": ".next",
-  "rewrites": [
-    {
-      "source": "/v1/:path*",
-      "destination": "https://PROJECT_REF.supabase.co/functions/v1/:path*",
-      "has": [
-        { "type": "host", "value": "api.agekey.com.br" }
-      ]
-    }
-  ],
   "headers": [
     {
-      "source": "/v1/:path*",
+      "source": "/(v1|functions/v1)/:path*",
       "has": [
         { "type": "host", "value": "api.agekey.com.br" }
       ],

@@ -64,8 +64,22 @@ implementação atual está em Supabase Edge Functions
 (`https://<project>.supabase.co/functions/v1/*`), porém o contrato
 público **não** expõe esse domínio diretamente.
 
-Decisão: usar **Vercel rewrites** como proxy edge entre
+Decisão: usar **Next.js rewrites** (em `apps/admin/next.config.mjs`) como proxy edge entre
 `api.agekey.com.br/v1/*` → `https://<project>.supabase.co/functions/v1/*`.
+
+Adicionalmente, **`api.agekey.com.br/functions/v1/*`** é mantido como
+rewrite paralelo de compatibilidade enquanto os SDKs mobile já em
+produção (iOS `AgeKeySwift`, Android `agekey-android`) chamam o path
+legado. O contrato canônico para novos clientes é `/v1/...`; o
+`/functions/v1/...` será descontinuado em ≥ 12 meses ou no próximo
+major dos SDKs, o que vier antes.
+
+> **Por que `next.config.mjs` e não `vercel.json`?** `vercel.json` não
+> suporta interpolação de env var na `destination` de rewrites. Subir
+> `https://PROJECT_REF.supabase.co/...` literal seria um footgun de
+> deploy (404 em prod). Em `next.config.mjs.rewrites()` o destino é
+> construído com `process.env.SUPABASE_PROJECT_REF` em build-time e o
+> build falha barulhento se a env estiver ausente.
 
 ### Por que proxy
 
@@ -80,15 +94,32 @@ Decisão: usar **Vercel rewrites** como proxy edge entre
 
 ### Como funciona
 
-1. Cliente envia `POST https://api.agekey.com.br/v1/verifications/session/create`.
-2. Vercel edge intercepta o host `api.agekey.com.br` (rule definida
-   em `vercel.json` com `has: [{ type: "host", value: "api.agekey.com.br" }]`).
-3. Rewrite substitui apenas o path: `/v1/:path*` → `/functions/v1/:path*`,
-   destination `https://<PROJECT_REF>.supabase.co`.
+1. Cliente envia `POST https://api.agekey.com.br/v1/verifications/session/create`
+   (ou `https://api.agekey.com.br/functions/v1/verifications-session-create`
+   no path legado dos SDKs mobile).
+2. Vercel edge intercepta o host `api.agekey.com.br` (rule definida em
+   `apps/admin/next.config.mjs` `rewrites()` com
+   `has: [{ type: "host", value: "api.agekey.com.br" }]`).
+3. Rewrite substitui apenas o path:
+   - `/v1/:path*` → `https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/:path*`
+   - `/functions/v1/:path*` → `https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/:path*`
 4. Vercel preserva method, body, e headers (`Authorization`,
    `X-AgeKey-API-Key`, `Idempotency-Key`, `Content-Type`).
 5. Response da Edge Function é retornada ao cliente acrescida dos
-   headers de segurança definidos em `headers` no `vercel.json`.
+   headers de segurança definidos em `vercel.json` `headers` (escopados
+   para `host=api.agekey.com.br` e source `/(v1|functions/v1)/:path*`).
+
+### Env vars necessárias
+
+| Variável | Scope | Quando | Notas |
+|---|---|---|---|
+| `ENABLE_API_GATEWAY` | Production | quando o domínio `api.agekey.com.br` é configurado no projeto Vercel | `true` ativa as rewrites; ausente/`false` mantém o admin sem proxy |
+| `SUPABASE_PROJECT_REF` | Production | sempre que `ENABLE_API_GATEWAY=true` | server-only (NÃO `NEXT_PUBLIC_*`); ref do projeto Supabase de produção (ex.: `abc123xyz`) |
+
+`apps/admin/next.config.mjs` lança erro de build se
+`ENABLE_API_GATEWAY=true` e `SUPABASE_PROJECT_REF` não estiver definido —
+prefere falhar barulhento a deploy silenciosamente um proxy que retorna
+404 ou 502 para todo cliente.
 
 > **Importante:** rewrite NÃO é redirect. O cliente continua falando
 > com `api.agekey.com.br` para a vida toda da request — não há

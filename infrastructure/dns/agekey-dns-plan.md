@@ -49,7 +49,7 @@ de apex. **Não declarar `AAAA`** até a Vercel documentar oficialmente.
 | `agekey.com.br` | `ALIAS`/`A` | `cname.vercel-dns.com.` / `76.76.21.21` | 300 | site institucional | apex |
 | `www.agekey.com.br` | `CNAME` | `cname.vercel-dns.com.` | 300 | redirect 301 → apex | servido pelo mesmo projeto Vercel |
 | `app.agekey.com.br` | `CNAME` | `cname.vercel-dns.com.` | 300 | painel admin (`apps/admin`) | autenticação via Supabase |
-| `api.agekey.com.br` | `CNAME` | `cname.vercel-dns.com.` | 300 | API pública / proxy Edge Functions | rewrite definido em `vercel.json` (ver AK-P0-03) |
+| `api.agekey.com.br` | `CNAME` | `cname.vercel-dns.com.` | 300 | API pública / proxy Edge Functions | rewrite definido em `apps/admin/next.config.mjs` (ver AK-P0-03) |
 | `verify.agekey.com.br` | `CNAME` | `cname.vercel-dns.com.` | 300 | hosted page do fluxo de verificação | iframeável apenas com `frame-ancestors` configurado |
 | `docs.agekey.com.br` | `CNAME` | `cname.vercel-dns.com.` | 300 | documentação (Docusaurus / Nextra) | leitura pública |
 | `status.agekey.com.br` | `CNAME` | `<provider>.statuspage.io.` | 3600 | status page externa | provider sugerido: Atlassian Statuspage ou Instatus |
@@ -213,7 +213,7 @@ Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
 3. Curl manual sem `-k` em todos os hosts retorna 200 com cadeia
    válida.
 4. **Apenas então** ativar header HSTS no Vercel para todos os
-   projetos (já incluído no `vercel.json` para `api.agekey.com.br`
+   projetos (já incluído em `apps/admin/next.config.mjs` rewrites para `api.agekey.com.br`
    — ver AK-P0-03).
 5. Submeter em https://hstspreload.org **somente após** o header
    estar live por ≥7 dias com `includeSubDomains; preload`.
@@ -311,7 +311,7 @@ Se qualquer linha falhar:
 
 - **Não apontar `api.agekey.com.br` diretamente para Supabase**
   (`*.supabase.co`). O contrato público é `api.agekey.com.br/v1/*` —
-  ver `vercel.json` e `infrastructure/vercel-deploy.md` (AK-P0-03).
+  ver `apps/admin/next.config.mjs` e `infrastructure/vercel-deploy.md` (AK-P0-03).
   Apontar diretamente quebra a abstração e impede troca de
   infraestrutura sem `Host` migration.
 - A criação dos registros é **ação humana** no painel do registrar
