@@ -70,7 +70,13 @@ Every test in `security/pentest/manual-smoke-tests.md` marked
 ## 5. Vercel hardening (`infrastructure/vercel-deploy.md`)
 
 - [ ] Production project keys segregated from Preview / Development
+      (rodar `infrastructure/scripts/audit-vercel-env.sh` — ver
+      `infrastructure/vercel-deploy.md` § "Auditoria de env vars" e
+      a matriz canônica em `infrastructure/secrets.md` § "Matrix
+      Vercel envs")
 - [ ] `NEXT_PUBLIC_*` audited for any server secret pattern
+      (executar o "Bundle leak check" descrito em
+      `infrastructure/vercel-deploy.md`)
 - [ ] HSTS, CSP, X-Frame-Options (DENY for admin),
       Referrer-Policy, Permissions-Policy headers active
 - [ ] Build command pinned: `pnpm install --frozen-lockfile && pnpm build`
