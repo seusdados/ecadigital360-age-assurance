@@ -173,20 +173,35 @@ export type TenantBootstrapResponse = z.infer<
 // ============================================================
 // AUDIT LIST
 // ============================================================
+//
+// Filtros suportados:
+//   - action          (LIKE — substring case-sensitive sobre action; ex.
+//                     "policy.update", "delete")
+//   - resource_type   (eq — ex. "policy", "tenant")
+//   - resource_id     (eq — uuid do recurso alvo)
+//   - actor_type      (eq enum)
+//   - actor_id        (eq — uuid do ator)
+//   - from / to       (created_at >= from, created_at < to; ISO 8601)
+//   - cursor          (paginação descendente por id)
+//   - limit           (1..10000; default 100; cap em 10000 para suportar
+//                     export CSV server-side sem stream)
 export const AuditListQuerySchema = z
   .object({
-    action: z.string().optional(),
-    resource_type: z.string().optional(),
+    action: z.string().min(1).max(120).optional(),
+    resource_type: z.string().min(1).max(60).optional(),
+    resource_id: UuidSchema.optional(),
     actor_type: z.enum(['user', 'api_key', 'system', 'cron']).optional(),
+    actor_id: UuidSchema.optional(),
     from: z.string().datetime().optional(),
     to: z.string().datetime().optional(),
     cursor: UuidSchema.optional(),
-    limit: z.coerce.number().int().min(1).max(200).default(100),
+    limit: z.coerce.number().int().min(1).max(10_000).default(100),
   })
   .strict();
 
 export const AuditEventItemSchema = z.object({
   id: UuidSchema,
+  tenant_id: UuidSchema,
   actor_type: z.enum(['user', 'api_key', 'system', 'cron']),
   actor_id: UuidSchema.nullable(),
   action: z.string(),
@@ -194,6 +209,7 @@ export const AuditEventItemSchema = z.object({
   resource_id: UuidSchema.nullable(),
   diff_json: z.record(z.unknown()),
   client_ip: z.string().nullable(),
+  user_agent: z.string().nullable(),
   created_at: z.string().datetime(),
 });
 export type AuditEventItem = z.infer<typeof AuditEventItemSchema>;

@@ -227,6 +227,7 @@ export type AuditActorType = 'user' | 'api_key' | 'system' | 'cron';
 
 export interface AuditEventItem {
   id: string;
+  tenant_id: string;
   actor_type: AuditActorType;
   actor_id: string | null;
   action: string;
@@ -234,6 +235,7 @@ export interface AuditEventItem {
   resource_id: string | null;
   diff_json: Record<string, unknown>;
   client_ip: string | null;
+  user_agent: string | null;
   created_at: string;
 }
 
@@ -246,7 +248,9 @@ export interface AuditListResponse {
 export interface AuditListParams {
   action?: string;
   resource_type?: string;
+  resource_id?: string;
   actor_type?: AuditActorType;
+  actor_id?: string;
   from?: string;
   to?: string;
   cursor?: string;
@@ -331,7 +335,9 @@ export const agekey = {
         query: {
           action: params.action,
           resource_type: params.resource_type,
+          resource_id: params.resource_id,
           actor_type: params.actor_type,
+          actor_id: params.actor_id,
           from: params.from,
           to: params.to,
           cursor: params.cursor,

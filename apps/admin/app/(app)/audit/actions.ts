@@ -33,9 +33,12 @@ export async function loadMoreAuditAction(
     cursor: stringOrUndef(formData.get('cursor')),
     action: stringOrUndef(formData.get('action')),
     resource_type: stringOrUndef(formData.get('resource_type')),
+    resource_id: stringOrUndef(formData.get('resource_id')),
     actor_type: actorTypeOrUndef(formData.get('actor_type')),
+    actor_id: stringOrUndef(formData.get('actor_id')),
     from: stringOrUndef(formData.get('from')),
     to: stringOrUndef(formData.get('to')),
+    limit: pageSizeOrUndef(formData.get('page_size')),
   };
 
   try {
@@ -68,5 +71,13 @@ function actorTypeOrUndef(
   if (v === 'user' || v === 'api_key' || v === 'system' || v === 'cron') {
     return v;
   }
+  return undefined;
+}
+
+function pageSizeOrUndef(value: FormDataEntryValue | null): number | undefined {
+  const v = stringOrUndef(value);
+  if (!v) return undefined;
+  const n = Number.parseInt(v, 10);
+  if (n === 50 || n === 100 || n === 500) return n;
   return undefined;
 }
