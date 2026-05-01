@@ -16,6 +16,33 @@ Cria sessão AgeKey. Recebe apenas:
 - `external_user_ref` (opcional, **deve ser opaca / hash HMAC**)
 - `redirect_url` (opcional)
 
+#### Contrato de `external_user_ref`
+
+`external_user_ref` é uma referência opaca controlada pelo cliente para
+correlacionar a sessão com seu próprio usuário. **Nunca pode conter PII.**
+
+O servidor (Edge Function `verifications-session-create`) e o schema Zod
+em `packages/shared/src/schemas/sessions.ts` rejeitam, antes de qualquer
+operação de banco:
+
+- E-mails (`alice@example.com`)
+- CPF (`123.456.789-09`, `12345678909`)
+- CNPJ (`12.345.678/0001-95`)
+- Telefones BR (`+55 11 9 9999-8888`)
+- RG (`12.345.678-9`)
+- Strings triviais / placeholders (`admin`, `test`, `1234`, `password`,
+  `anonymous`, etc.)
+- Valores com menos de 8 caracteres ou whitespace antes/depois
+
+Rejeições retornam HTTP 400 com `reason_code:
+'EXTERNAL_USER_REF_PII_DETECTED'`.
+
+Recomendação ao integrador: gerar `external_user_ref` como
+`HMAC_SHA256(tenant_secret, internal_user_id)` truncado para 32 bytes
+hex, ou usar UUID v4. A lógica canônica de detecção está em
+`packages/shared/src/external-user-ref.ts` e é re-exportada do pacote
+`@agekey/shared` (`detectPiiInRef`).
+
 ### completeSession
 
 Completa sessão com método aceito. O método é um dos `'zkp' | 'vc' | 'gateway' | 'fallback'`. O payload de cada método é definido em `packages/shared/src/schemas/sessions.ts`.

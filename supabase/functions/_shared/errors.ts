@@ -5,6 +5,7 @@
 export {
   AgeKeyError,
   InvalidRequestError,
+  ExternalUserRefPiiError,
   UnauthorizedError,
   ForbiddenError,
   NotFoundError,

@@ -40,6 +40,9 @@ export const REASON_CODES = {
   RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
   INVALID_REQUEST: 'INVALID_REQUEST',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+
+  // Boundary input rejections
+  EXTERNAL_USER_REF_PII_DETECTED: 'EXTERNAL_USER_REF_PII_DETECTED',
 } as const;
 
 export type ReasonCode = (typeof REASON_CODES)[keyof typeof REASON_CODES];
