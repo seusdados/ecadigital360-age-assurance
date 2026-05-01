@@ -23,12 +23,15 @@ import {
 import { log, newTraceId } from '../_shared/logger.ts';
 import { config } from '../_shared/env.ts';
 import { generateEs256KeyPair } from '../_shared/tokens.ts';
+import {
+  ACTIVE_TO_RETIRED_MS,
+  classifyTransitions,
+  type CryptoKeyRow,
+  RETIRED_PURGE_MS,
+  ROTATING_TO_ACTIVE_MS,
+} from '../_shared/key-rotation-logic.ts';
 
 const FN = 'key-rotation';
-
-const ROTATING_TO_ACTIVE_MS = 24 * 60 * 60 * 1000; // 24h
-const ACTIVE_TO_RETIRED_MS = 24 * 60 * 60 * 1000; // 24h overlap
-const RETIRED_PURGE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 function nextKid(): string {
   const d = new Date();
@@ -98,65 +101,48 @@ serve(async (req) => {
       throw new InternalError(`vault store failed: ${vaultErr.message}`);
     }
 
-    // Promote old rotating → active when ≥ 24h old
-    const promotions: string[] = [];
-    for (const k of keys ?? []) {
-      if (k.status !== 'rotating') continue;
-      const age = now - new Date(k.created_at).getTime();
-      if (age >= ROTATING_TO_ACTIVE_MS) {
-        const upd = await client
-          .from('crypto_keys')
-          .update({ status: 'active', activated_at: new Date().toISOString() })
-          .eq('id', k.id);
-        if (upd.error) throw upd.error;
-        promotions.push(k.kid);
-      }
+    // Compute the lifecycle plan via the pure helper (unit-tested in
+    // _tests/key-rotation-logic.test.ts). The IO layer below just applies
+    // it. ROTATING_TO_ACTIVE_MS / ACTIVE_TO_RETIRED_MS / RETIRED_PURGE_MS
+    // are passed explicitly to keep call-site self-documenting.
+    const plan = classifyTransitions(now, (keys ?? []) as CryptoKeyRow[], {
+      rotatingToActiveMs: ROTATING_TO_ACTIVE_MS,
+      activeToRetiredMs: ACTIVE_TO_RETIRED_MS,
+      retiredPurgeMs: RETIRED_PURGE_MS,
+    });
+
+    // Promote rotating → active.
+    for (const kidToPromote of plan.promote) {
+      const upd = await client
+        .from('crypto_keys')
+        .update({ status: 'active', activated_at: new Date().toISOString() })
+        .eq('kid', kidToPromote);
+      if (upd.error) throw upd.error;
     }
 
-    // Demote active → retired when ≥ 24h old AND not the most recently activated
-    let mostRecentActivated: { id: string; activated_at: string } | null = null;
-    for (const k of keys ?? []) {
-      if (k.status === 'active' && k.activated_at) {
-        if (
-          !mostRecentActivated ||
-          new Date(k.activated_at).getTime() > new Date(mostRecentActivated.activated_at).getTime()
-        ) {
-          mostRecentActivated = { id: k.id, activated_at: k.activated_at };
-        }
-      }
-    }
-    const retirements: string[] = [];
-    for (const k of keys ?? []) {
-      if (k.status !== 'active' || !k.activated_at) continue;
-      if (mostRecentActivated && k.id === mostRecentActivated.id) continue;
-      const age = now - new Date(k.activated_at).getTime();
-      if (age >= ACTIVE_TO_RETIRED_MS) {
-        const upd = await client
-          .from('crypto_keys')
-          .update({ status: 'retired', retired_at: new Date().toISOString() })
-          .eq('id', k.id);
-        if (upd.error) throw upd.error;
-        retirements.push(k.kid);
-      }
+    // Demote active → retired.
+    for (const kidToRetire of plan.retire) {
+      const upd = await client
+        .from('crypto_keys')
+        .update({ status: 'retired', retired_at: new Date().toISOString() })
+        .eq('kid', kidToRetire);
+      if (upd.error) throw upd.error;
     }
 
-    // Purge retired keys older than 90 days. Vault secret is purged first
-    // to avoid orphan rows in vault.secrets.
-    const purges: string[] = [];
-    for (const k of keys ?? []) {
-      if (k.status !== 'retired' || !k.retired_at) continue;
-      const age = now - new Date(k.retired_at).getTime();
-      if (age >= RETIRED_PURGE_MS) {
-        const purgeVault = await client.rpc('crypto_keys_purge_vault', {
-          p_kid: k.kid,
-        });
-        if (purgeVault.error) throw purgeVault.error;
-
-        const del = await client.from('crypto_keys').delete().eq('id', k.id);
-        if (del.error) throw del.error;
-        purges.push(k.kid);
-      }
+    // Purge retired keys older than 90 days. Vault secret is purged
+    // first to avoid orphan rows in vault.secrets.
+    for (const kidToPurge of plan.purge) {
+      const purgeVault = await client.rpc('crypto_keys_purge_vault', {
+        p_kid: kidToPurge,
+      });
+      if (purgeVault.error) throw purgeVault.error;
+      const del = await client.from('crypto_keys').delete().eq('kid', kidToPurge);
+      if (del.error) throw del.error;
     }
+
+    const promotions = plan.promote;
+    const retirements = plan.retire;
+    const purges = plan.purge;
 
     log.info('key_rotation', {
       fn: FN,

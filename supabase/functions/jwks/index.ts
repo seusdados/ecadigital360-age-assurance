@@ -8,6 +8,7 @@ import { InvalidRequestError } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
 import { loadJwksPublicKeys } from '../_shared/keys.ts';
+import { buildJwksResponseBody } from '../_shared/jwks-response.ts';
 
 const FN = 'jwks';
 const CACHE_TTL_S = 300;
@@ -27,16 +28,9 @@ serve(async (req) => {
   try {
     const keys = await loadJwksPublicKeys(db());
 
-    const body = {
-      keys: keys.map((k) => ({
-        ...k.publicJwk,
-        kid: k.kid,
-        use: 'sig',
-        alg: 'ES256',
-      })),
-    };
+    const body = buildJwksResponseBody(keys);
 
-    log.info('jwks_served', { fn: FN, trace_id, key_count: keys.length });
+    log.info('jwks_served', { fn: FN, trace_id, key_count: body.keys.length });
 
     return jsonResponse(body, {
       origin,
