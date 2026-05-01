@@ -57,25 +57,36 @@ Legenda:
 
 - `✓` — DEVE existir nesse scope.
 - `✗` — NÃO PODE existir nesse scope (auditoria FALHA se presente).
-- `~` — placeholder dummy aceito (provider real apenas em Production).
+- `—` — não se aplica (consumido por outro plano de hospedagem; não vive em Vercel).
+
+**Princípio**: o admin Next.js em Vercel só consome `NEXT_PUBLIC_*`. Todo
+secret server-only (service role, JWT secret, cron secret, webhook
+signing, admin API key, gateway keys) vive em **Supabase Edge Functions
+secrets** (`supabase secrets set --project-ref <ref>`), nunca em Vercel.
+Duplicar amplia a superfície de exposição sem benefício.
 
 ```
-Variável                           | Prod | Preview | Dev  | Notas
------------------------------------|------|---------|------|---------------------------------------------------
-NEXT_PUBLIC_SUPABASE_URL           |  ✓   |    ✓    |  ✓   | URL do projeto Supabase (público)
-NEXT_PUBLIC_SUPABASE_ANON_KEY      |  ✓   |    ✓    |  ✓   | anon key (público, RLS gate)
-NEXT_PUBLIC_AGEKEY_API_BASE        |  ✓   |    ✓    |  ✓   | api.agekey.com.br ou staging.api.agekey.com.br
-NEXT_PUBLIC_AGEKEY_ISSUER          |  ✓   |    ✓    |  ✓   | https://agekey.com.br ou staging.agekey.com.br
-NEXT_PUBLIC_APP_URL                |  ✓   |    ✓    |  ✓   | URL pública do painel
-SUPABASE_SERVICE_ROLE_KEY          |  ✓   |    ✗    |  ✗   | server-only — NUNCA em Preview/Dev
-SUPABASE_JWT_SECRET                |  ✓   |    ✗    |  ✗   | server-only
-AGEKEY_ADMIN_API_KEY               |  ✓   |    ✗    |  ✗   | server-only
-WEBHOOK_SIGNING_SECRET_DEFAULT     |  ✓   |    ✗    |  ✗   | server-only
-GATEWAY_YOTI_API_KEY               |  ✓   |    ~    |  ~   | dummy em Preview/Dev (provider real só em Prod)
-GATEWAY_VERIFF_API_KEY             |  ✓   |    ~    |  ~   | idem
-GATEWAY_ONFIDO_API_KEY             |  ✓   |    ~    |  ~   | idem
-CRON_SECRET                        |  ✓   |    ✗    |  ✗   | server-only, usado pelos pg_cron jobs
+Variável                           | Prod | Preview | Dev  | Plano de hospedagem | Notas
+-----------------------------------|------|---------|------|---------------------|---------------------------------------------------
+NEXT_PUBLIC_SUPABASE_URL           |  ✓   |    ✓    |  ✓   | Vercel envs         | URL do projeto Supabase (público)
+NEXT_PUBLIC_SUPABASE_ANON_KEY      |  ✓   |    ✓    |  ✓   | Vercel envs         | anon key (público, RLS gate)
+NEXT_PUBLIC_AGEKEY_API_BASE        |  ✓   |    ✓    |  ✓   | Vercel envs         | api.agekey.com.br ou staging.api.agekey.com.br
+NEXT_PUBLIC_AGEKEY_ISSUER          |  ✓   |    ✓    |  ✓   | Vercel envs         | https://agekey.com.br ou staging.agekey.com.br
+NEXT_PUBLIC_APP_URL                |  ✓   |    ✓    |  ✓   | Vercel envs         | URL pública do painel
+SUPABASE_SERVICE_ROLE_KEY          |  ✗   |    ✗    |  ✗   | Supabase secrets    | consumido por Edge Functions (env.ts); não vive em Vercel
+SUPABASE_JWT_SECRET                |  ✗   |    ✗    |  ✗   | Supabase secrets    | idem
+AGEKEY_ADMIN_API_KEY               |  ✗   |    ✗    |  ✗   | Supabase secrets    | usado por Edge Functions admin (tenant-bootstrap, etc.)
+WEBHOOK_SIGNING_SECRET             |  ✗   |    ✗    |  ✗   | Supabase secrets    | hash em applications.webhook_secret_hash; raw em Supabase
+GATEWAY_YOTI_API_KEY               |  ✗   |    ✗    |  ✗   | Supabase secrets    | gateway adapter — Edge Function only
+GATEWAY_VERIFF_API_KEY             |  ✗   |    ✗    |  ✗   | Supabase secrets    | idem
+GATEWAY_ONFIDO_API_KEY             |  ✗   |    ✗    |  ✗   | Supabase secrets    | idem
+CRON_SECRET                        |  ✗   |    ✗    |  ✗   | Supabase secrets    | usado pelos pg_cron jobs (010_edge_support.sql)
 ```
+
+> A linha `✗ ✗ ✗` para secrets server-only é uma red-team check: se o
+> audit detectar qualquer um deles em qualquer scope Vercel é drift de
+> segurança e devem ser removidos do Vercel + revogados/rotacionados em
+> Supabase como precaução.
 
 > ⚠️ **Lembrete `NEXT_PUBLIC_*`**: QUALQUER valor exposto em uma
 > variável `NEXT_PUBLIC_*` é embutido no bundle JavaScript servido
