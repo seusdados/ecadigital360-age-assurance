@@ -314,6 +314,13 @@ export const agekey = {
         '/verifications-token-revoke',
         { method: 'POST', body: { jti, reason } },
       ),
+    verify: (body: { token: string; expected_audience?: string }) =>
+      request<{
+        valid: boolean;
+        reason_code?: string;
+        claims?: Record<string, unknown>;
+        revoked: boolean;
+      }>('/verifications-token-verify', { method: 'POST', body }),
   },
   artifacts: {
     signedUrl: (artifact_id: string) =>
