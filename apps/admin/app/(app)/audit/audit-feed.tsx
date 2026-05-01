@@ -19,9 +19,12 @@ interface AuditFeedProps {
   filters: {
     action: string;
     resource_type: string;
+    resource_id: string;
     actor_type: string;
+    actor_id: string;
     from: string;
     to: string;
+    page_size: string;
   };
 }
 
@@ -57,9 +60,13 @@ export function AuditFeed({
     if (filters.action) formData.set('action', filters.action);
     if (filters.resource_type)
       formData.set('resource_type', filters.resource_type);
+    if (filters.resource_id)
+      formData.set('resource_id', filters.resource_id);
     if (filters.actor_type) formData.set('actor_type', filters.actor_type);
+    if (filters.actor_id) formData.set('actor_id', filters.actor_id);
     if (filters.from) formData.set('from', filters.from);
     if (filters.to) formData.set('to', filters.to);
+    if (filters.page_size) formData.set('page_size', filters.page_size);
 
     startTransition(async () => {
       const result = await loadMoreAuditAction(

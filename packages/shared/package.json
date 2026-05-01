@@ -13,7 +13,8 @@
     "./errors": "./src/errors.ts",
     "./types": "./src/types.ts",
     "./privacy-guard": "./src/privacy-guard.ts",
-    "./agekey-claims": "./src/agekey-claims.ts"
+    "./agekey-claims": "./src/agekey-claims.ts",
+    "./audit-csv": "./src/audit-csv.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
