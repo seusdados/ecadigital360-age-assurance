@@ -11,8 +11,8 @@ Runbook canônico de ambientes do AgeKey. Cobre **provisionamento**, **sync de m
 | Ambiente | Uso | Project Supabase | Domínio | Vercel scope |
 |---|---|---|---|---|
 | **Local** | desenvolvimento | `supabase start` (Docker) | `127.0.0.1:54321` / `127.0.0.1:3000` | Development |
-| **Staging** | demos, validação, smoke | `agekey-staging` (sa-east-1, plano Pro) | `staging.agekey.com.br` | Preview / dedicado |
-| **Production** | clientes reais | `agekey-prod` (sa-east-1, plano Pro+) | `agekey.com.br`, `app.`, `api.`, `verify.`, `docs.` | Production |
+| **Staging** | demos, validação, smoke | `AgeKey-hml` (id `wljedzqgprkpqhuazdzv`, sa-east-1, plano Pro) | `staging.agekey.com.br` | Preview / dedicado |
+| **Production** | clientes reais | `AgeKey-prod` (id `tpdiccnmsnjtjwhardij`, sa-east-1, plano Pro+) | `agekey.com.br`, `app.`, `api.`, `verify.`, `docs.` | Production |
 
 **Nunca** misturar dados entre ambientes — service-role keys, JWT secrets, project_refs e DNS são distintos. Cross-environment seed (`04_dev_tenant.sql`) é proibido fora de Local.
 
@@ -47,7 +47,7 @@ Uso: demos, validação pré-prod, smoke tests do `security/pentest/manual-smoke
 
 | Atributo | Valor |
 |---|---|
-| Naming canônico | `agekey-staging` |
+| Naming canônico | `AgeKey-hml` (project ref `wljedzqgprkpqhuazdzv`) |
 | Região | `sa-east-1` (São Paulo) |
 | Plano Supabase | Pro (necessário para PITR + cron HTTP fora de janelas curtas) |
 | Domínio | `staging.agekey.com.br`, `staging.api.agekey.com.br` |
@@ -58,7 +58,7 @@ Uso: demos, validação pré-prod, smoke tests do `security/pentest/manual-smoke
 Onde guardar `project_ref` e `project_url`:
 
 - `Vercel Project › Settings › Environment Variables › Preview`:
-  - `NEXT_PUBLIC_SUPABASE_URL=https://<staging-ref>.supabase.co`
+  - `NEXT_PUBLIC_SUPABASE_URL=https://wljedzqgprkpqhuazdzv.supabase.co`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-staging>`
   - `NEXT_PUBLIC_AGEKEY_API_BASE=https://staging.api.agekey.com.br/v1`
   - `NEXT_PUBLIC_AGEKEY_ISSUER=https://staging.agekey.com.br`
@@ -86,7 +86,7 @@ Uso: clientes reais. Mudanças destrutivas exigem janela de manutenção comunic
 
 | Atributo | Valor |
 |---|---|
-| Naming canônico | `agekey-prod` |
+| Naming canônico | `AgeKey-prod` (project ref `tpdiccnmsnjtjwhardij`) |
 | Região | `sa-east-1` (São Paulo) |
 | Plano Supabase | Pro+ (PITR estendido, banda dedicada) |
 | Domínio | `agekey.com.br`, `app.`, `api.`, `verify.`, `docs.`, `status.` |
@@ -97,7 +97,7 @@ Uso: clientes reais. Mudanças destrutivas exigem janela de manutenção comunic
 Onde guardar `project_ref` e `project_url`:
 
 - `Vercel Project › Settings › Environment Variables › Production`:
-  - `NEXT_PUBLIC_SUPABASE_URL=https://<prod-ref>.supabase.co`
+  - `NEXT_PUBLIC_SUPABASE_URL=https://tpdiccnmsnjtjwhardij.supabase.co`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-prod>`
   - `NEXT_PUBLIC_AGEKEY_API_BASE=https://api.agekey.com.br/v1`
   - `NEXT_PUBLIC_AGEKEY_ISSUER=https://agekey.com.br`
@@ -150,10 +150,10 @@ Variáveis de ambiente esperadas:
 
 ```bash
 export SUPABASE_ACCESS_TOKEN=<PAT da org>
-export SUPABASE_DB_URL_STAGING="postgres://postgres:<pwd>@db.<staging-ref>.supabase.co:5432/postgres"
-export SUPABASE_DB_URL_PROD="postgres://postgres:<pwd>@db.<prod-ref>.supabase.co:5432/postgres"
-export SUPABASE_PROJECT_REF_STAGING=<staging-ref>
-export SUPABASE_PROJECT_REF_PROD=<prod-ref>
+export SUPABASE_DB_URL_STAGING="postgres://postgres:<pwd>@db.wljedzqgprkpqhuazdzv.supabase.co:5432/postgres"
+export SUPABASE_DB_URL_PROD="postgres://postgres:<pwd>@db.tpdiccnmsnjtjwhardij.supabase.co:5432/postgres"
+export SUPABASE_PROJECT_REF_STAGING=wljedzqgprkpqhuazdzv
+export SUPABASE_PROJECT_REF_PROD=tpdiccnmsnjtjwhardij
 ```
 
 ### Política de migrations destrutivas
@@ -205,17 +205,17 @@ Em **produção** o bootstrap é uma sequência controlada — não há Edge Fun
    Os arquivos populam apenas `jurisdictions`, `issuers` globais (`tenant_id IS NULL`) e `policies` template (`is_template = true`) — nada relativo a tenant real.
 4. Disparar key-rotation uma vez para popular `crypto_keys` com uma chave ativa antes do primeiro token ser emitido:
    ```bash
-   curl -X POST https://<prod-ref>.supabase.co/functions/v1/key-rotation \
+   curl -X POST https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1/key-rotation \
      -H "Authorization: Bearer $CRON_SECRET_PROD"
    ```
 5. Validar JWKS público:
    ```bash
-   curl -fsS https://<prod-ref>.supabase.co/functions/v1/jwks | jq '.keys | length'
+   curl -fsS https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1/jwks | jq '.keys | length'
    # esperado: >= 1
    ```
 6. Criar o primeiro tenant + owner via Edge Function `tenant-bootstrap`. Essa função é a única forma legítima de criar tenant em prod (RLS bloqueia INSERT direto por usuário, e o trigger de auditoria espera contexto). Chamada autenticada pelo `AGEKEY_ADMIN_API_KEY` (server-only):
    ```bash
-   curl -X POST https://<prod-ref>.supabase.co/functions/v1/tenant-bootstrap \
+   curl -X POST https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1/tenant-bootstrap \
      -H "X-AgeKey-Admin-Key: $AGEKEY_ADMIN_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{
@@ -243,11 +243,11 @@ GUCs obrigatórios por ambiente (sem isso o cron tenta `current_setting()` em st
 
 ```sql
 -- Em STAGING (via SQL Editor com role postgres):
-ALTER DATABASE postgres SET app.functions_url = 'https://<staging-ref>.supabase.co/functions/v1';
+ALTER DATABASE postgres SET app.functions_url = 'https://wljedzqgprkpqhuazdzv.supabase.co/functions/v1';
 ALTER DATABASE postgres SET app.cron_secret = '<staging-cron-secret>';
 
 -- Em PRODUCTION (via SQL Editor com role postgres):
-ALTER DATABASE postgres SET app.functions_url = 'https://<prod-ref>.supabase.co/functions/v1';
+ALTER DATABASE postgres SET app.functions_url = 'https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1';
 ALTER DATABASE postgres SET app.cron_secret = '<prod-cron-secret>';
 ```
 
@@ -381,7 +381,7 @@ Ver `compliance/incident-response-playbook.md`:
                │
                ▼
         ┌────────────────────────┐
-        │  Supabase agekey-prod  │  ← service-role + RLS authenticated
+        │  Supabase AgeKey-prod  │  ← service-role + RLS authenticated
         │  - Edge Functions      │  ← cron jobs + JWKS público
         │  - Postgres + RLS      │  ← migrations 000..016
         │  - Storage privado     │  ← bucket proof-artifacts (RLS)

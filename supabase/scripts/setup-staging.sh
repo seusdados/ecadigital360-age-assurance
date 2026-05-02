@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-staging.sh — aplica TODA a Fase 2 no projeto Supabase staging.
+# setup-staging.sh — aplica TODA a Fase 2 no projeto Supabase de homologação (AgeKey-hml).
 #
 # Pré-requisitos:
 #   - supabase CLI 1.180+ instalada
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-PROJECT_REF="tpdiccnmsnjtjwhardij"
+PROJECT_REF="wljedzqgprkpqhuazdzv"
 PROJECT_URL="https://${PROJECT_REF}.supabase.co"
 FUNCTIONS_BASE="${PROJECT_URL}/functions/v1"
 
@@ -70,7 +70,7 @@ if [[ $HAS_PSQL -eq 0 || -z "$DB_URL" ]]; then
 → psql não disponível ou DB_URL não obtida — aplique seeds manualmente.
 
   Caminho 1 (recomendado): SQL Editor do Dashboard, em
-    https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij/sql/new
+    https://supabase.com/dashboard/project/wljedzqgprkpqhuazdzv/sql/new
 
   Cole O CONTEÚDO COMPLETO de cada arquivo abaixo, NA ORDEM, e clique RUN:
     1. supabase/seed/01_jurisdictions.sql      (56 jurisdições)
