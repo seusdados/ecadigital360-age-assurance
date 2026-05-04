@@ -17,7 +17,8 @@
     "./privacy": "./src/privacy/index.ts",
     "./taxonomy": "./src/taxonomy/index.ts",
     "./webhooks": "./src/webhooks/index.ts",
-    "./retention": "./src/retention/index.ts"
+    "./retention": "./src/retention/index.ts",
+    "./feature-flags": "./src/feature-flags/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

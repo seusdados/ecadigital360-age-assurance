@@ -18,16 +18,23 @@ Branch: `claude/agekey-canonical-modular-architecture`.
 - [x] Testes mínimos da camada canônica via `vitest` em `packages/shared/__tests__/`.
 - [x] Documentação canônica em `docs/architecture/`, `docs/specs/` e `docs/audit/`.
 
-## P1 — Core Readiness Final (próxima rodada)
+## P1 — Core Readiness Final (rodada em andamento)
 
-Branch sugerida: `claude/agekey-core-readiness-canonical-alignment`.
+Branch: `claude/agekey-core-readiness-canonical-alignment` (PR empilhado sobre PR #34).
 
-- [ ] Alinhar `result_token` claims ao envelope canônico (sem quebrar contrato existente — adicionar `decision_domain`, `decision_id` como claim opcional).
-- [ ] Alinhar payload de `webhook_deliveries.payload` para incluir `AgeKeyWebhookPayload` canônico (inserindo o envelope canônico como `decision`).
-- [ ] Atualizar `audit_events` para registrar `decision_id` quando aplicável.
-- [ ] Atualizar `billing_events` para incluir `decision_domain` opcional.
-- [ ] Adicionar feature flags formais para `credential_mode` e `proof_mode`, com defaults `disabled`.
-- [ ] Atualizar admin labels para refletir taxonomia canônica (sem KYC).
+- [x] Adicionar schema canônico opcional ao `result_token` (`decision_id`, `decision_domain`, `reason_codes`) preservando o legado — `ResultTokenClaimsCanonicalSchema`.
+- [x] Adicionar headers canônicos em paralelo aos legados no `webhooks-worker` (`X-AgeKey-Webhook-Timestamp`, `X-AgeKey-Payload-Hash`, `X-AgeKey-Event-Id`, `X-AgeKey-Idempotency-Key`).
+- [x] Bridge canônica em `_shared/errors.ts` re-exportando `CANONICAL_REASON_CODES` ao lado do legado.
+- [x] Mapper legado→canônico em `@agekey/shared/decision` (`toCanonicalEnvelope`).
+- [x] Privacy Guard legado delegando ao canônico (estritamente mais seguro).
+- [x] `assertPayloadSafe(claims, 'public_token')` defensivo antes de assinar token em `verifications-session-complete`.
+- [x] Feature flags canônicas (`AGEKEY_CREDENTIAL_MODE_ENABLED`, `AGEKEY_SD_JWT_VC_ENABLED`, `AGEKEY_PROOF_MODE_ENABLED`, `AGEKEY_ZKP_BBS_ENABLED`, `AGEKEY_SAFETY_SIGNALS_ENABLED`, `AGEKEY_PARENTAL_CONSENT_ENABLED`) — `packages/shared/src/feature-flags/`.
+- [x] Testes (vitest): 38 novos casos cobrindo feature flags, mapper, schema canônico, delegação de privacy guard.
+- [ ] Migração SQL do trigger `fan_out_verification_webhooks` para gerar payload canônico (`decision_domain`, `decision_id`, `payload_hash`, `content_included: false`, `pii_included: false`) — **destrutivo, fica para rodada própria**.
+- [ ] Migração da assinatura HMAC para o formato canônico `${timestamp}.${nonce}.${rawBody}` — **destrutivo, fica para rodada própria**.
+- [ ] Atualizar `audit_events.diff_json` para registrar `decision_id` quando aplicável (não-destrutivo, próxima rodada).
+- [ ] Atualizar `billing_events` para incluir `decision_domain` opcional (requer migration aditiva).
+- [x] Auditar admin labels para "KYC", "verificar identidade", "idade real" — **zero ocorrências encontradas**, sem ação necessária.
 - [ ] Tests cross-tenant + privacy tests rodando no CI como gate (atualmente em `pnpm test:rls`).
 
 ## P2 — AgeKey Consent MVP
