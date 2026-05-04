@@ -11,16 +11,23 @@
     "./schemas": "./src/schemas/index.ts",
     "./reason-codes": "./src/reason-codes.ts",
     "./errors": "./src/errors.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./decision": "./src/decision/index.ts",
+    "./policy": "./src/policy/index.ts",
+    "./privacy": "./src/privacy/index.ts",
+    "./taxonomy": "./src/taxonomy/index.ts",
+    "./webhooks": "./src/webhooks/index.ts",
+    "./retention": "./src/retention/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no jest tests yet'"
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
   }
 }
