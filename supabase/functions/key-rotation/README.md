@@ -19,7 +19,8 @@ Auth: header `Authorization: Bearer $CRON_SECRET`.
 
 ## Deploy
 ```bash
-supabase functions deploy key-rotation --no-verify-jwt
+supabase functions deploy key-rotation --no-verify-jwt \
+  --import-map supabase/functions/import_map.json
 supabase secrets set CRON_SECRET=<...>
 ```
 

@@ -194,7 +194,7 @@ O script faz, em ordem:
 - aplica os 4 seeds (jurisdições, trust registry, policies, dev tenant)
 - configura `app.cron_secret` e `app.functions_url` no Postgres
 - `supabase secrets set` para `CRON_SECRET`, `AGEKEY_*`
-- `supabase functions deploy` para todas as **21 Edge Functions**
+- `supabase functions deploy --import-map supabase/functions/import_map.json` para todas as **21 Edge Functions** (o `import_map.json` resolve `zod`, `supabase-js` e os pacotes `@agekey/*` durante o empacotamento remoto, evitando o erro `Relative import path "zod"`)
 - chama `key-rotation` uma vez para gerar a primeira chave de assinatura
 - gera `apps/admin/types/database.ts` com tipos reais
 
