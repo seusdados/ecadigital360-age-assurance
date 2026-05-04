@@ -102,3 +102,42 @@ Comparação **em tempo constante** no receiver. Implementação:
 - Verify/Core já tem `webhook_endpoints` + `webhook_deliveries`. O contrato canônico **estende**, não substitui — eventos `verification.*` continuam compatíveis.
 - Consent e Safety Signals usam o **mesmo signer** e a **mesma tabela de deliveries** com particionamento por `status`.
 - Cabeçalhos `X-AgeKey-*` são padronizados — clientes só aprendem uma família.
+
+## 10. Estado atual (Rodada Core readiness alignment)
+
+A migração foi feita em duas camadas, **sem alterar o trigger SQL** que enfileira `webhook_deliveries`:
+
+### 10.1 Camada já alinhada (worker `webhooks-worker`)
+
+Os headers a seguir já são enviados em cada entrega de webhook, **em paralelo** aos headers legados:
+
+| Header legado (mantido) | Header canônico (novo) |
+|---|---|
+| `X-AgeKey-Event-Type` | `X-AgeKey-Event-Type` (idêntico) |
+| `X-AgeKey-Delivery-Id` | `X-AgeKey-Event-Id`, `X-AgeKey-Idempotency-Key` |
+| `X-AgeKey-Signature` | `X-AgeKey-Webhook-Timestamp`, `X-AgeKey-Payload-Hash` |
+
+Receivers existentes continuam funcionando exclusivamente com `X-AgeKey-Signature`. Receivers novos podem começar a validar `X-AgeKey-Webhook-Timestamp` e `X-AgeKey-Payload-Hash`.
+
+### 10.2 Pendência migrável (rodada futura)
+
+O HMAC continua sendo computado no trigger `fan_out_verification_webhooks` (`supabase/migrations/012_webhook_enqueue.sql`) com o formato legado: `HMAC_SHA256(secret_hash, payload_text)`.
+
+Para migrar para o formato canônico `HMAC_SHA256(secret, ${timestamp}.${nonce}.${rawBody})`, é necessário:
+
+1. Adicionar `nonce` por delivery na tabela `webhook_deliveries`.
+2. Reescrever o trigger SQL para gerar `nonce` aleatório + assinar com `${timestamp}.${nonce}.${payload_text}`.
+3. Atualizar receivers SDK (`@agekey/sdk-js/server` `registerWebhookHandler`) para aceitar a nova forma.
+4. Manter compat no worker enviando ambas as assinaturas durante uma janela de migração.
+
+Essa migração é **destrutiva** (toca trigger SQL ativo) e fica fora do escopo da rodada Core readiness alignment.
+
+### 10.3 Pendência migrável (payload_json do trigger)
+
+Hoje o payload gerado pelo trigger SQL não inclui `decision_domain`, `decision_id`, `policy_id`, `policy_version`, `payload_hash`, `content_included`, `pii_included`. Para alinhar o `payload_json` ao `AgeKeyWebhookPayload` canônico:
+
+1. Estender `build_verification_event_payload(p_result_id)` (012_webhook_enqueue.sql).
+2. Garantir que o payload passa pelo Privacy Guard (perfil `webhook`) antes da inserção — pode ser feito em pre-trigger TypeScript ou via constraint SQL.
+3. Atualizar o consumidor SDK (`@agekey/sdk-js/server`) para tipar o payload com a forma canônica.
+
+Idem ponto 10.2 — destrutivo, fica fora desta rodada.

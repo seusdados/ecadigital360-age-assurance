@@ -10,6 +10,10 @@ import { jsonResponse, respondError } from '../_shared/errors.ts';
 import { ForbiddenError, InvalidRequestError } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { config } from '../_shared/env.ts';
+import {
+  WEBHOOK_HEADERS,
+  payloadHash,
+} from '../../../packages/shared/src/webhooks/index.ts';
 
 const FN = 'webhooks-worker';
 
@@ -87,6 +91,13 @@ serve(async (req) => {
       }
 
       const body = JSON.stringify(d.payload_json);
+      // Headers canônicos enviados em paralelo aos headers legados
+      // (compat-safe). O signature legado em `d.signature` continua
+      // sendo a assinatura primária; o `X-AgeKey-Webhook-*` é
+      // informativo até que a Rodada de migração de trigger SQL
+      // (012_webhook_enqueue.sql) seja executada.
+      const canonicalTimestamp = Math.floor(Date.now() / 1000).toString();
+      const canonicalPayloadHash = await payloadHash(body);
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
       let lastResponseCode: number | null = null;
@@ -97,9 +108,16 @@ serve(async (req) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            // Headers legados (mantidos por compatibilidade):
             'X-AgeKey-Event-Type': d.event_type,
             'X-AgeKey-Delivery-Id': d.idempotency_key,
             'X-AgeKey-Signature': d.signature,
+            // Headers canônicos (Rodada Core readiness alignment):
+            [WEBHOOK_HEADERS.EVENT_TYPE]: d.event_type,
+            [WEBHOOK_HEADERS.EVENT_ID]: d.idempotency_key,
+            [WEBHOOK_HEADERS.IDEMPOTENCY_KEY]: d.idempotency_key,
+            [WEBHOOK_HEADERS.TIMESTAMP]: canonicalTimestamp,
+            'X-AgeKey-Payload-Hash': canonicalPayloadHash,
           },
           body,
           signal: ctrl.signal,
