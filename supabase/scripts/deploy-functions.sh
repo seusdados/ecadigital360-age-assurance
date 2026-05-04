@@ -39,10 +39,9 @@ FUNCTIONS=(
   trust-registry-refresh
 )
 
-IMPORT_MAP="supabase/functions/import_map.json"
 for fn in "${FUNCTIONS[@]}"; do
   echo "→ deploy: $fn"
-  supabase functions deploy "$fn" --no-verify-jwt --import-map "$IMPORT_MAP"
+  supabase functions deploy "$fn" --no-verify-jwt
 done
 
 echo "✓ ${#FUNCTIONS[@]} functions deployadas"
