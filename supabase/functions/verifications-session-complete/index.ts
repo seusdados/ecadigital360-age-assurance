@@ -27,6 +27,10 @@ import { getAdapter, AdapterDenied } from '../_shared/adapters/index.ts';
 import { config } from '../_shared/env.ts';
 import { SessionCompleteRequestSchema } from '../../../packages/shared/src/schemas/sessions.ts';
 import { REASON_CODES } from '../../../packages/shared/src/reason-codes.ts';
+import {
+  assertPayloadSafe,
+  PrivacyGuardForbiddenClaimError,
+} from '../../../packages/shared/src/privacy/index.ts';
 
 const FN = 'verifications-session-complete';
 
@@ -214,6 +218,28 @@ serve(async (req) => {
           application_id: principal.applicationId,
         },
       };
+
+      // Defesa canônica: rejeita assinatura se as claims contiverem PII
+      // ou conteúdo bruto. Em condições normais isso nunca dispara
+      // (o token só carrega `agekey.*` controlado), mas garante que um
+      // adapter futuro defeituoso não consiga emitir token público com
+      // documento, e-mail, idade exata etc.
+      try {
+        assertPayloadSafe(claims, 'public_token');
+      } catch (err) {
+        if (err instanceof PrivacyGuardForbiddenClaimError) {
+          log.error('privacy_guard_blocked_token', {
+            fn: FN,
+            trace_id,
+            tenant_id: principal.tenantId,
+            session_id: session.id,
+            violations: err.violations.map((v) => v.path),
+            reason_code: err.reasonCode,
+          });
+          throw new InternalError('Token rejected by privacy guard');
+        }
+        throw err;
+      }
 
       const jwt = await signResultToken(claims, signingKey);
       signedToken = { jwt, jti: tokenRow.jti, expires_at: expIso, kid: signingKey.kid };
