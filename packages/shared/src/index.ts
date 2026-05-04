@@ -34,3 +34,4 @@ export * from './taxonomy/index.ts';
 export * from './webhooks/index.ts';
 export * from './retention/index.ts';
 export * from './feature-flags/index.ts';
+export * from './parental-consent/index.ts';
