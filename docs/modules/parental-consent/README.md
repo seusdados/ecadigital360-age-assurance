@@ -72,6 +72,7 @@ O módulo entrega:
 | `POST /v1/parental-consent/:id/guardian/start` | `guardian_panel_token` | Cifra contato em Vault, envia OTP. |
 | `POST /v1/parental-consent/:id/confirm` | `guardian_panel_token` | Verifica OTP + decisão. Emite token se aprovado. |
 | `GET /v1/parental-consent/session/:id` | API key OU `guardian_panel_token` | Visão pública sem PII. |
+| `GET /v1/parental-consent/:id/text` | `guardian_panel_token` | Texto integral do `consent_text_version` (uso exclusivo do painel parental, `text/plain`, `Cache-Control: no-store`). |
 | `POST /v1/parental-consent/:id/revoke` | API key OU `guardian_panel_token` | Append-only revoke + webhook. |
 | `POST /v1/parental-consent/token/verify` | público | Validação online ES256 + revogação. |
 

@@ -239,6 +239,25 @@ export type ParentalConsentSessionGetResponse = z.infer<
 >;
 
 // ============================================================
+// GET /v1/parental-consent/:consent_request_id/text
+// Texto integral do consent_text_version associado à request.
+// Auth exclusivamente via guardian_panel_token (público).
+// ============================================================
+
+export const ParentalConsentTextResponseSchema = z
+  .object({
+    id: UuidSchema,
+    locale: z.string(),
+    text_hash: z.string(),
+    text_body: z.string(),
+    content_type: z.literal('text/plain'),
+  })
+  .strict();
+export type ParentalConsentTextResponse = z.infer<
+  typeof ParentalConsentTextResponseSchema
+>;
+
+// ============================================================
 // POST /v1/parental-consent/:consent_token_id/revoke
 // Revoga o consentimento e o token.
 // ============================================================
