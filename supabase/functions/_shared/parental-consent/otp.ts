@@ -2,7 +2,7 @@
 //
 // Re-exporta os helpers puros de packages/shared (`generateOtp`,
 // `hashOtp`, `hmacContact`, `maskContact`, `normalizeContact`,
-// `constantTimeEqual`) e adiciona o stub de delivery (Deno-specific).
+// `constantTimeEqual`) e adiciona delivery via provider registry (R5).
 
 export {
   generateOtp,
@@ -13,6 +13,12 @@ export {
   hmacContact,
 } from '../../../../packages/shared/src/parental-consent/otp-utils.ts';
 
+import {
+  selectProvider,
+  NOOP_PROVIDER_ID,
+  type OtpProvider,
+} from './otp-providers/index.ts';
+
 export interface OtpDeliveryRequest {
   channel: 'email' | 'phone';
   contactCleartext: string;
@@ -22,20 +28,12 @@ export interface OtpDeliveryRequest {
 
 export interface OtpDeliveryResult {
   delivered: boolean;
-  /** Provider noop em dev: 'noop'. Provider real: 'smtp' / 'sms'. */
   provider: string;
-  /** Devolve o OTP cleartext apenas em dev mode. */
   devOtp: string | null;
+  providerMessageId?: string;
+  errorReason?: string;
 }
 
-/**
- * Envia o OTP. Stub.
- *
- * Em dev (`AGEKEY_PARENTAL_CONSENT_DEV_RETURN_OTP=true`), retorna o OTP
- * cleartext na resposta. Em prod, exige provider real configurado e
- * falha explicitamente caso não exista — nunca aprova um fluxo que
- * pretendia entregar OTP sem ter entregue de fato.
- */
 export async function deliverOtp(
   req: OtpDeliveryRequest,
   env: {
@@ -50,22 +48,37 @@ export async function deliverOtp(
     );
   }
 
-  if (env.deliveryProvider === 'noop') {
-    if (!env.devReturnOtp) {
-      throw new Error(
-        'OTP delivery provider is "noop" but AGEKEY_PARENTAL_CONSENT_DEV_RETURN_OTP is off — would silently drop. Configure a real provider before going to production.',
-      );
-    }
-    return {
-      delivered: true,
-      provider: 'noop',
-      devOtp: req.otp,
-    };
+  let provider: OtpProvider;
+  provider = selectProvider({
+    read: (name: string) => {
+      if (name === 'AGEKEY_PARENTAL_CONSENT_OTP_PROVIDER') {
+        return env.deliveryProvider;
+      }
+      return Deno.env.get(name);
+    },
+  });
+
+  if (provider.id === NOOP_PROVIDER_ID && !env.devReturnOtp) {
+    throw new Error(
+      'OTP delivery provider is "noop" but AGEKEY_PARENTAL_CONSENT_DEV_RETURN_OTP is off — would silently drop. Configure a real provider before going to production.',
+    );
   }
 
-  // Outros providers ainda não implementados — falha explícita para
-  // evitar simulação de envio.
-  throw new Error(
-    `OTP delivery provider "${env.deliveryProvider}" is not implemented in this build. Use "noop" with AGEKEY_PARENTAL_CONSENT_DEV_RETURN_OTP=true for development.`,
-  );
+  const result = await provider.send({
+    channel: req.channel,
+    contact: req.contactCleartext,
+    otp: req.otp,
+    locale: req.locale,
+  });
+
+  return {
+    delivered: result.delivered,
+    provider: result.providerId,
+    devOtp:
+      provider.id === NOOP_PROVIDER_ID && env.devReturnOtp ? req.otp : null,
+    ...(result.providerMessageId
+      ? { providerMessageId: result.providerMessageId }
+      : {}),
+    ...(result.errorReason ? { errorReason: result.errorReason } : {}),
+  };
 }
