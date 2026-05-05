@@ -37,3 +37,4 @@ export * from './feature-flags/index.ts';
 export * from './parental-consent/index.ts';
 export * from './safety/index.ts';
 export * from './credential/index.ts';
+export * from './proof/index.ts';
