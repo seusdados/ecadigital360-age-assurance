@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldCheck,
   Stamp,
+  UserCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +32,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Visão geral', icon: Gauge },
   { href: '/verifications', label: 'Verificações', icon: ShieldCheck },
+  { href: '/consents', label: 'Consentimentos', icon: UserCheck },
   { href: '/applications', label: 'Aplicações', icon: AppWindow },
   { href: '/policies', label: 'Políticas', icon: FileText },
   { href: '/issuers', label: 'Emissores', icon: Stamp },
