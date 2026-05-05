@@ -303,6 +303,56 @@ export const SafetyRuleConfigSchema = z
 export type SafetyRuleConfig = z.infer<typeof SafetyRuleConfigSchema>;
 
 // ============================================================
+// RULE WRITE (R9 — admin override per-tenant)
+// ============================================================
+
+/**
+ * Body para POST /v1/safety/rules — cria/upsert override per-tenant.
+ * `tenant_id` vem do principal (api_key); body NUNCA aceita override
+ * de tenant_id.
+ */
+export const SafetyRuleWriteRequestSchema = z
+  .object({
+    rule_code: SafetyRuleCodeSchema,
+    enabled: z.boolean(),
+    severity: SafetySeveritySchema,
+    actions: z.array(SafetyActionSchema).min(1).max(8),
+    config_json: z.record(z.unknown()).default({}),
+  })
+  .strict();
+export type SafetyRuleWriteRequest = z.infer<
+  typeof SafetyRuleWriteRequestSchema
+>;
+
+/**
+ * Body para PATCH /v1/safety/rules/:id — todos os campos opcionais.
+ */
+export const SafetyRulePatchRequestSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    severity: SafetySeveritySchema.optional(),
+    actions: z.array(SafetyActionSchema).min(1).max(8).optional(),
+    config_json: z.record(z.unknown()).optional(),
+  })
+  .strict()
+  .refine((d) => Object.keys(d).length > 0, {
+    message: 'At least one field required',
+  });
+export type SafetyRulePatchRequest = z.infer<
+  typeof SafetyRulePatchRequestSchema
+>;
+
+export const SafetyRuleWriteResponseSchema = z.object({
+  id: UuidSchema,
+  rule_code: SafetyRuleCodeSchema,
+  tenant_id: UuidSchema,
+  status: z.enum(['created', 'updated', 'deleted']),
+});
+export type SafetyRuleWriteResponse = z.infer<
+  typeof SafetyRuleWriteResponseSchema
+>;
+
+// ============================================================
 // SUBJECT (read-only via admin)
 // ============================================================
 
