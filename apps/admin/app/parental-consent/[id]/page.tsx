@@ -41,7 +41,9 @@ interface SessionData {
 interface ConsentTextRow {
   id: string;
   locale: string;
+  text_hash: string;
   text_body: string;
+  content_type: 'text/plain';
 }
 
 async function fetchSession(
@@ -67,15 +69,27 @@ async function fetchSession(
 }
 
 async function fetchConsentText(
-  consentTextVersionId: string,
+  consentRequestId: string,
+  token: string,
 ): Promise<ConsentTextRow | null> {
-  // Server action via Supabase server client — RLS permite tenant only,
-  // mas service_role bypassa. Aqui usamos a anon key + token na URL,
-  // então recorremos a um endpoint adicional. Para o MVP, o painel
-  // exibe apenas o `text_hash` e um placeholder genérico — o texto
-  // completo é entregue ao integrador via API. Em produção, criar
-  // endpoint público `/parental-consent-text/:id?token=<panel_token>`.
-  return null;
+  // Endpoint público dedicado: valida o `guardian_panel_token` e
+  // retorna o `text_body` integral via service-role (bypassa RLS).
+  // Em caso de falha (rede, expiração, rate limit) retornamos null e
+  // o painel cai no fallback genérico (purpose_codes/data_categories).
+  const base = agekeyEnv.apiBase();
+  const url = `${base}/parental-consent-text-get/${encodeURIComponent(
+    consentRequestId,
+  )}/text?token=${encodeURIComponent(token)}`;
+  try {
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as ConsentTextRow;
+    if (!data || typeof data.text_body !== 'string') return null;
+    if (data.content_type !== 'text/plain') return null;
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 export default async function ParentalConsentPanel({
@@ -108,7 +122,7 @@ export default async function ParentalConsentPanel({
     );
   }
 
-  const consentText = await fetchConsentText(session.consent_text.id);
+  const consentText = await fetchConsentText(session.consent_request_id, token);
 
   if (
     session.status === 'approved' ||
