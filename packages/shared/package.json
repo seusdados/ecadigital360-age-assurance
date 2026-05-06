@@ -13,7 +13,16 @@
     "./errors": "./src/errors.ts",
     "./types": "./src/types.ts",
     "./privacy-guard": "./src/privacy-guard.ts",
-    "./agekey-claims": "./src/agekey-claims.ts"
+    "./privacy/privacy-guard": "./src/privacy/privacy-guard.ts",
+    "./agekey-claims": "./src/agekey-claims.ts",
+    "./decision/decision-envelope": "./src/decision/decision-envelope.ts",
+    "./taxonomy/reason-codes": "./src/taxonomy/reason-codes.ts",
+    "./taxonomy/age-taxonomy": "./src/taxonomy/age-taxonomy.ts",
+    "./webhooks/webhook-signer": "./src/webhooks/webhook-signer.ts",
+    "./webhooks/webhook-types": "./src/webhooks/webhook-types.ts",
+    "./retention/retention-classes": "./src/retention/retention-classes.ts",
+    "./policy/policy-types": "./src/policy/policy-types.ts",
+    "./policy/policy-engine": "./src/policy/policy-engine.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
