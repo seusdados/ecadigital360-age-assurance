@@ -152,10 +152,15 @@ FUNCTIONS=(
   retention-job
   trust-registry-refresh
 )
-IMPORT_MAP="supabase/functions/import_map.json"
+# Notas sobre import_map:
+#  - O CLI atual do Supabase deprecou a flag --import-map; agora ele lê
+#    automaticamente supabase/functions/deno.json para resolver imports
+#    bare (zod, supabase-js, @agekey/*).
+#  - Mantemos supabase/functions/import_map.json como espelho legível,
+#    mas o deploy abaixo confia apenas no deno.json.
 for fn in "${FUNCTIONS[@]}"; do
   echo "→ deploy: $fn"
-  supabase functions deploy "$fn" --no-verify-jwt --import-map "$IMPORT_MAP"
+  supabase functions deploy "$fn" --no-verify-jwt
 done
 
 # ---------- 7. bootstrap da primeira chave de assinatura ----------
