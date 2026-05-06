@@ -51,17 +51,30 @@ serve(async (req) => {
     let query = client
       .from('audit_events')
       .select(
-        'id, actor_type, actor_id, action, resource_type, resource_id, diff_json, client_ip, created_at',
+        'id, tenant_id, actor_type, actor_id, action, resource_type, resource_id, diff_json, client_ip, user_agent, created_at',
       )
       .eq('tenant_id', principal.tenantId)
       .order('id', { ascending: false })
       .limit(q.limit + 1);
 
-    if (q.action) query = query.eq('action', q.action);
+    // `action` is a free-text input (LIKE). We sanitize the user's wildcard
+    // metacharacters so the filter behaves like substring search and the
+    // stored hash plan over `idx_audit_events_action` is still usable when
+    // the input is fully literal. Postgrest's `ilike` is case-insensitive.
+    if (q.action) {
+      const escaped = q.action.replace(/[\\%_]/g, (c) => `\\${c}`);
+      query = query.ilike('action', `%${escaped}%`);
+    }
     if (q.resource_type) query = query.eq('resource_type', q.resource_type);
+    if (q.resource_id) query = query.eq('resource_id', q.resource_id);
     if (q.actor_type) query = query.eq('actor_type', q.actor_type);
+    if (q.actor_id) query = query.eq('actor_id', q.actor_id);
     if (q.from) query = query.gte('created_at', q.from);
-    if (q.to) query = query.lte('created_at', q.to);
+    // `to` is treated as exclusive upper bound (semi-open interval)
+    // because callers typically pass the next-day boundary in YYYY-MM-DD
+    // form. This keeps the filter consistent with the panel's date pickers
+    // (de/até inclusive on the day) — see filter-bar.tsx.
+    if (q.to) query = query.lt('created_at', q.to);
     if (q.cursor) query = query.lt('id', q.cursor);
 
     const { data, error } = await query;
@@ -69,6 +82,7 @@ serve(async (req) => {
 
     const rows = (data ?? []) as Array<{
       id: string;
+      tenant_id: string;
       actor_type: string;
       actor_id: string | null;
       action: string;
@@ -76,6 +90,7 @@ serve(async (req) => {
       resource_id: string | null;
       diff_json: Record<string, unknown>;
       client_ip: string | null;
+      user_agent: string | null;
       created_at: string;
     }>;
 

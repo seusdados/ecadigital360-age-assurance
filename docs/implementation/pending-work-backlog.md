@@ -42,7 +42,7 @@ risco. Itens marcados P0 são bloqueadores de go-live.
 | AK-P1-07 | SDK | OpenID4VP request builder | M | AK-P1-06 | server SDK monta `request_uri` OpenID4VP válido com nonce binding | `packages/sdk-js/src/server.ts` | técnico | open |
 | AK-P1-08 | Painel | Webhook endpoint management UI (CRUD, signing secret rotation, dead-letter inspection) | M | nenhum | painel cobre criar/listar/rotacionar/eventos | `apps/admin/app/(app)/webhooks/` | técnico | open |
 | AK-P1-09 | Painel | Token verify dashboard / tester | S | nenhum | tela `Settings/API` permite testar token JWT, mostra `valid`, `claims`, `revoked` | `apps/admin/app/(app)/settings/api/` | técnico | open |
-| AK-P1-10 | Painel | Audit log com filtros + export CSV | M | nenhum | filtros por actor / target / período; export limited a 10k linhas | `apps/admin/app/(app)/audit/` | técnico | open |
+| AK-P1-10 | Painel | Audit log com filtros + export CSV | M | nenhum | filtros por actor / target / período; export limited a 10k linhas | `apps/admin/app/(app)/audit/` | técnico | done |
 
 ## P2 — Advanced crypto
 
