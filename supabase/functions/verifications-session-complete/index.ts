@@ -2,6 +2,11 @@
 //
 // Dispatches to the chosen adapter, persists the verification_result,
 // records billing, and (when approved) signs and stores the result_token.
+//
+// Single source of truth: every public exit (response body, JWT claims,
+// webhook trigger inputs, audit diff, structured logs) is derived from a
+// canonical Decision Envelope built by `_shared/decision-envelope.ts`.
+// Reference: docs/audit/agekey-core-runtime-decision-envelope-report.md.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authenticateApiKey } from '../_shared/auth.ts';
@@ -19,15 +24,23 @@ import {
   loadAndConsumeChallenge,
   loadSession,
 } from '../_shared/sessions.ts';
-import { resolvePolicy, meetsAssurance } from '../_shared/policy-engine.ts';
+import { resolvePolicy } from '../_shared/policy-engine.ts';
 import { recordBillingEvent } from '../_shared/billing.ts';
+import { writeAuditEvent } from '../_shared/audit.ts';
 import { loadActiveSigningKey } from '../_shared/keys.ts';
 import { signResultToken } from '../_shared/tokens.ts';
 import { getAdapter, AdapterDenied } from '../_shared/adapters/index.ts';
 import { config } from '../_shared/env.ts';
 import { SessionCompleteRequestSchema } from '../../../packages/shared/src/schemas/sessions.ts';
-import { REASON_CODES } from '../../../packages/shared/src/reason-codes.ts';
 import { assertPublicPayloadHasNoPii } from '../../../packages/shared/src/privacy-guard.ts';
+import {
+  buildVerificationDecisionEnvelope,
+  computeEnvelopePayloadHash,
+  envelopeAuditDiff,
+  envelopeLogFields,
+  envelopeToCompleteResponse,
+  envelopeToSignableClaims,
+} from '../_shared/decision-envelope.ts';
 
 const FN = 'verifications-session-complete';
 
@@ -130,16 +143,23 @@ serve(async (req) => {
       }
     }
 
-    // Enforce policy assurance
-    let finalDecision = adapterResult.decision;
-    let finalReason = adapterResult.reason_code;
-    if (
-      adapterResult.decision === 'approved' &&
-      !meetsAssurance(adapterResult.assurance_level, policy.required_assurance_level)
-    ) {
-      finalDecision = 'denied';
-      finalReason = REASON_CODES.POLICY_ASSURANCE_UNMET;
-    }
+    // Build the canonical Decision Envelope. The envelope re-evaluates the
+    // policy → assurance ladder, so its `decision`/`reason_code`/
+    // `threshold_satisfied` are authoritative — the runtime no longer keeps
+    // a parallel local copy. The envelope also runs the privacy guard, so any
+    // adapter that smuggled a PII-shaped key into `evidence` is rejected
+    // here, before signing or persisting.
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const envelope = buildVerificationDecisionEnvelope({
+      tenantId: principal.tenantId,
+      applicationId: principal.applicationId,
+      sessionId: session.id,
+      policy,
+      adapterResult,
+      externalUserRef: session.external_user_ref,
+      nowSeconds,
+    });
+    const finalDecision = envelope.decision;
 
     // Persist artifact when present
     let issuerRowId: string | null = null;
@@ -165,15 +185,16 @@ serve(async (req) => {
       });
     }
 
-    // result_tokens row (jti) — created upfront so we have the FK target
+    // result_tokens row (jti) — created upfront so we have the FK target.
+    // When the decision is approved, we project the envelope into JWT claims
+    // via `envelopeToSignableClaims` (which runs the privacy guard one extra
+    // time at the signing boundary).
     let signedToken: { jwt: string; jti: string; expires_at: string; kid: string } | null =
       null;
     let signedTokenJti: string | null = null;
     if (finalDecision === 'approved') {
       const signingKey = await loadActiveSigningKey(client);
-      const now = Math.floor(Date.now() / 1000);
-      const exp = now + policy.token_ttl_seconds;
-      const expIso = new Date(exp * 1000).toISOString();
+      const expIso = new Date(envelope.expires_at * 1000).toISOString();
 
       const { data: tokenRow, error: tokenErr } = await client
         .from('result_tokens')
@@ -191,52 +212,43 @@ serve(async (req) => {
       }
       signedTokenJti = tokenRow.jti;
 
-      const claims = {
+      const claims = envelopeToSignableClaims(envelope, {
         iss: config.issuer(),
         aud: principal.applicationSlug,
-        ...(session.external_user_ref ? { sub: session.external_user_ref } : {}),
         jti: tokenRow.jti,
-        iat: now,
-        nbf: now,
-        exp,
-        agekey: {
-          decision: finalDecision,
-          threshold_satisfied: adapterResult.threshold_satisfied,
-          age_threshold: policy.age_threshold,
-          method: adapterResult.method,
-          assurance_level: adapterResult.assurance_level,
-          reason_code: finalReason,
-          policy: {
-            id: policy.id,
-            slug: policy.slug,
-            version: policy.current_version,
-          },
-          tenant_id: principal.tenantId,
-          application_id: principal.applicationId,
-        },
-      };
-
-      // Defense in depth: assert the claims don't contain any PII-shaped key
-      // before signing — this is the last point we can refuse to mint a token
-      // that would leak data to a client.
-      assertPublicPayloadHasNoPii(claims);
+      });
 
       const jwt = await signResultToken(claims, signingKey);
       signedToken = { jwt, jti: tokenRow.jti, expires_at: expIso, kid: signingKey.kid };
     }
 
-    // Insert verification_results (append-only, unique per session)
+    // Compute a stable hash of the canonical envelope. The hash is opaque,
+    // PII-free and small enough to ship to audit + (later) webhook headers.
+    const payloadHash = await computeEnvelopePayloadHash(envelope);
+
+    // Insert verification_results (append-only, unique per session). The
+    // decision/threshold/assurance/reason fields all come from the envelope
+    // — guaranteeing the SQL trigger that fans webhooks out reads canonical
+    // values. `evidence_json` is augmented with `_envelope` metadata so the
+    // hash is recoverable post-hoc without touching audit storage.
     await client.from('verification_results').insert({
       session_id: session.id,
       tenant_id: principal.tenantId,
-      decision: finalDecision,
-      threshold_satisfied: adapterResult.threshold_satisfied,
-      assurance_level: adapterResult.assurance_level,
-      method: adapterResult.method,
+      decision: envelope.decision,
+      threshold_satisfied: envelope.threshold_satisfied,
+      assurance_level: envelope.assurance_level,
+      method: envelope.method,
       issuer_id: issuerRowId,
       signed_token_jti: signedTokenJti,
-      reason_code: finalReason,
-      evidence_json: adapterResult.evidence,
+      reason_code: envelope.reason_code,
+      evidence_json: {
+        ...adapterResult.evidence,
+        _envelope: {
+          version: envelope.envelope_version,
+          payload_hash: payloadHash,
+          policy_version: envelope.policy.version,
+        },
+      },
     });
 
     // Move session to completed
@@ -245,37 +257,45 @@ serve(async (req) => {
       .update({ status: 'completed', completed_at: new Date().toISOString() })
       .eq('id', session.id);
 
+    // Audit event — built by whitelisting envelope fields (no PII, no
+    // free-form payload). The DB triggers in 009_triggers.sql still fire on
+    // `verification_results`; this row records the canonical decision-domain
+    // metadata that the trigger does not see.
+    await writeAuditEvent(client, {
+      tenantId: principal.tenantId,
+      actorType: 'api_key',
+      action: 'verification.completed',
+      resourceType: 'verification_session',
+      resourceId: session.id,
+      diff: envelopeAuditDiff(envelope, payloadHash, signedTokenJti),
+      clientIp: session.client_ip,
+      userAgent: session.user_agent,
+    });
+
     // Billing
     await recordBillingEvent(client, {
       tenantId: principal.tenantId,
       applicationId: principal.applicationId,
       sessionId: session.id,
-      method: adapterResult.method,
-      decision: finalDecision,
+      method: envelope.method,
+      decision: envelope.decision,
     });
 
     log.info('session_completed', {
       fn: FN,
       trace_id,
       tenant_id: principal.tenantId,
-      application_id: principal.applicationId,
-      session_id: session.id,
-      method: adapterResult.method,
-      decision: finalDecision,
-      reason_code: finalReason,
+      ...envelopeLogFields(envelope, payloadHash),
+      result_token_id: signedTokenJti,
       duration_ms: Date.now() - t0,
       status: 200,
     });
 
-    const responseBody = {
-      session_id: session.id,
-      status: 'completed' as const,
-      decision: finalDecision,
-      reason_code: finalReason,
-      method: adapterResult.method,
-      assurance_level: adapterResult.assurance_level,
-      token: signedToken,
-    };
+    const responseBody = envelopeToCompleteResponse(envelope, signedToken);
+    // Defense in depth: even though the envelope already passed the privacy
+    // guard, run the guard one more time on the exit shape. Catches any
+    // accidental future addition to `envelopeToCompleteResponse` that could
+    // smuggle PII into the public response.
     assertPublicPayloadHasNoPii(responseBody);
     return jsonResponse(responseBody, { origin });
   } catch (err) {
