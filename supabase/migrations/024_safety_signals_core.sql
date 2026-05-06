@@ -262,12 +262,12 @@ CREATE TABLE safety_aggregates (
   /**
    * Janela: '24h' | '7d' | '30d' | '12m'.
    */
-  window                   text                NOT NULL,
+  "window"                 text                NOT NULL,
   value                    bigint              NOT NULL DEFAULT 0,
   updated_at               timestamptz         NOT NULL DEFAULT now(),
 
   CONSTRAINT safety_aggregates_pkey PRIMARY KEY (id),
-  CONSTRAINT safety_aggregates_uniq UNIQUE (tenant_id, application_id, subject_id, aggregate_key, window)
+  CONSTRAINT safety_aggregates_uniq UNIQUE (tenant_id, application_id, subject_id, aggregate_key, "window")
 );
 
 CREATE INDEX idx_sag_tenant ON safety_aggregates (tenant_id, aggregate_key);
