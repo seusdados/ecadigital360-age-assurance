@@ -64,18 +64,17 @@ export function categorizeReasonCode(code: string): ReasonCodeCategory {
 }
 
 /**
- * Reserved codes for Consent and Safety modules. The Core does not emit them
+ * Reserved codes for the Safety Signals module. The Core does not emit them
  * yet — they are declared here so adapters and clients can lock the wire
- * spelling now and avoid breaking changes when the modules ship.
+ * spelling now and avoid breaking changes when the module ships.
+ *
+ * Round 3 (Parental Consent) PROMOTED the consent codes from RESERVED to LIVE
+ * in `../reason-codes.ts`; only the Safety codes remain reserved.
  *
  * IMPORTANT: keep these in sync with `infrastructure/data-model.md` whenever
- * a Consent or Safety code is promoted from "reserved" to "live".
+ * a Safety code is promoted from "reserved" to "live".
  */
 export const RESERVED_REASON_CODES = {
-  CONSENT_NOT_GIVEN: 'CONSENT_NOT_GIVEN',
-  CONSENT_EXPIRED: 'CONSENT_EXPIRED',
-  CONSENT_PROOF_MISSING: 'CONSENT_PROOF_MISSING',
-  CONSENT_REVOKED: 'CONSENT_REVOKED',
   SAFETY_RISK_FLAGGED: 'SAFETY_RISK_FLAGGED',
   SAFETY_PRIVACY_BUDGET_EXCEEDED: 'SAFETY_PRIVACY_BUDGET_EXCEEDED',
   SAFETY_DEVICE_BLOCKED: 'SAFETY_DEVICE_BLOCKED',

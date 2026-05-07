@@ -40,12 +40,21 @@ describe('reason-code taxonomy', () => {
   });
 
   it('routes reserved codes to their module category', () => {
-    expect(categorizeReasonCode(RESERVED_REASON_CODES.CONSENT_NOT_GIVEN)).toBe(
-      REASON_CODE_CATEGORIES.consent,
-    );
     expect(categorizeReasonCode(RESERVED_REASON_CODES.SAFETY_RISK_FLAGGED)).toBe(
       REASON_CODE_CATEGORIES.safety,
     );
+  });
+
+  it('routes promoted parental_consent codes to the consent category', () => {
+    // Round 3 promoted CONSENT_* from RESERVED to LIVE.
+    expect(categorizeReasonCode(REASON_CODES.CONSENT_GRANTED)).toBe(
+      REASON_CODE_CATEGORIES.consent,
+    );
+    expect(categorizeReasonCode(REASON_CODES.CONSENT_REVOKED)).toBe(
+      REASON_CODE_CATEGORIES.consent,
+    );
+    expect(isLiveReasonCode(REASON_CODES.CONSENT_GRANTED)).toBe(true);
+    expect(isReservedReasonCode(REASON_CODES.CONSENT_GRANTED)).toBe(false);
   });
 
   it('separates live and reserved namespaces', () => {
