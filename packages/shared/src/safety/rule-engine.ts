@@ -98,6 +98,28 @@ export function maxSeverity(
   return SEV_RANK[a] >= SEV_RANK[b] ? a : b;
 }
 
+/**
+ * Defense-in-depth: enforce that high/critical severity always carries
+ * at least one human-review action (`escalate_to_human_review` or
+ * `notify_safety_team`). Used to backstop tenant overrides that may
+ * accidentally drop human review from the action set.
+ *
+ * Returns a new array with `notify_safety_team` appended when missing.
+ * Order is preserved so audit logs remain stable.
+ */
+export function enforceSeverityActionInvariant(
+  severity: SafetySeverity,
+  actions: ReadonlyArray<SafetyAction>,
+): SafetyAction[] {
+  const out = Array.from(actions);
+  if (severity !== 'high' && severity !== 'critical') return out;
+  const hasHumanReview =
+    out.includes('escalate_to_human_review') ||
+    out.includes('notify_safety_team');
+  if (!hasHumanReview) out.push('notify_safety_team');
+  return out;
+}
+
 // ============================================================
 // Regras sistêmicas (5)
 // ============================================================
@@ -249,7 +271,9 @@ export function evaluateAllRules(
     // Override severity/actions com config do tenant (rule.config tem precedência).
     if (out.triggered) {
       out.severity = cfg.severity;
-      out.actions = cfg.actions;
+      // Defense-in-depth: aplica invariante severity↔action mesmo se o
+      // tenant tiver desabilitado human-review num override.
+      out.actions = enforceSeverityActionInvariant(cfg.severity, cfg.actions);
     }
     individual.push(out);
   }
@@ -284,6 +308,11 @@ export function evaluateAllRules(
       topSevForCategory = SEV_RANK[t.severity];
       topCategory = t.risk_category;
     }
+  }
+
+  // Aggregated invariant: high/critical severity must carry human review.
+  for (const a of enforceSeverityActionInvariant(severity, Array.from(actions))) {
+    actions.add(a);
   }
 
   const stepUp = actions.has('request_step_up');
