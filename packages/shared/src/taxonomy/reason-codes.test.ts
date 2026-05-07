@@ -39,12 +39,6 @@ describe('reason-code taxonomy', () => {
     );
   });
 
-  it('routes reserved codes to their module category', () => {
-    expect(categorizeReasonCode(RESERVED_REASON_CODES.SAFETY_RISK_FLAGGED)).toBe(
-      REASON_CODE_CATEGORIES.safety,
-    );
-  });
-
   it('routes promoted parental_consent codes to the consent category', () => {
     // Round 3 promoted CONSENT_* from RESERVED to LIVE.
     expect(categorizeReasonCode(REASON_CODES.CONSENT_GRANTED)).toBe(
@@ -55,6 +49,18 @@ describe('reason-code taxonomy', () => {
     );
     expect(isLiveReasonCode(REASON_CODES.CONSENT_GRANTED)).toBe(true);
     expect(isReservedReasonCode(REASON_CODES.CONSENT_GRANTED)).toBe(false);
+  });
+
+  it('routes promoted safety_signals codes to the safety category', () => {
+    // Round 4 promoted SAFETY_* from RESERVED to LIVE.
+    expect(categorizeReasonCode(REASON_CODES.SAFETY_RISK_FLAGGED)).toBe(
+      REASON_CODE_CATEGORIES.safety,
+    );
+    expect(categorizeReasonCode(REASON_CODES.SAFETY_STEP_UP_REQUIRED)).toBe(
+      REASON_CODE_CATEGORIES.safety,
+    );
+    expect(isLiveReasonCode(REASON_CODES.SAFETY_RISK_FLAGGED)).toBe(true);
+    expect(isReservedReasonCode(REASON_CODES.SAFETY_RISK_FLAGGED)).toBe(false);
   });
 
   it('separates live and reserved namespaces', () => {

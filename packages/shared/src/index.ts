@@ -28,3 +28,6 @@ export * from './policy/policy-engine.ts';
 
 // Parental Consent module (Round 3) — peer of the age-verify decision domain.
 export * from './consent/index.ts';
+
+// Safety Signals module (Round 4) — metadata-only peer.
+export * from './safety/index.ts';
