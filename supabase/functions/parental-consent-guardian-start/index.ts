@@ -27,7 +27,10 @@ import {
   maskContact,
   deliverOtp,
 } from '../_shared/parental-consent/otp.ts';
-import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import {
+  readParentalConsentFlags,
+  featureDisabledResponse,
+} from '../_shared/parental-consent/feature-flags.ts';
 import {
   ParentalGuardianStartRequestSchema,
   type ParentalGuardianStartResponse,
@@ -64,9 +67,12 @@ serve(async (req) => {
   try {
     const flags = readParentalConsentFlags();
     if (!flags.enabled) {
-      throw new ForbiddenError(
-        'AgeKey Consent module is disabled (AGEKEY_PARENTAL_CONSENT_ENABLED=false).',
-      );
+      log.info('parental_consent_feature_disabled', {
+        fn: FN,
+        trace_id,
+        status: 503,
+      });
+      return featureDisabledResponse(origin);
     }
 
     const url = new URL(req.url);

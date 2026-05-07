@@ -22,7 +22,12 @@ import {
   hashPanelToken,
   constantTimeEqualString,
 } from '../_shared/parental-consent/panel-token.ts';
-import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import {
+  readParentalConsentFlags,
+  featureDisabledResponse,
+} from '../_shared/parental-consent/feature-flags.ts';
+import { buildConsentDecisionEnvelope } from '../_shared/parental-consent/decision-envelope.ts';
+import { CANONICAL_REASON_CODES } from '../../../packages/shared/src/taxonomy/reason-codes.ts';
 import {
   ParentalConsentRevokeRequestSchema,
   type ParentalConsentRevokeResponse,
@@ -55,7 +60,12 @@ serve(async (req) => {
   try {
     const flags = readParentalConsentFlags();
     if (!flags.enabled) {
-      throw new ForbiddenError('AgeKey Consent module is disabled.');
+      log.info('parental_consent_feature_disabled', {
+        fn: FN,
+        trace_id,
+        status: 503,
+      });
+      return featureDisabledResponse(origin);
     }
 
     const url = new URL(req.url);
@@ -173,10 +183,21 @@ serve(async (req) => {
       })
       .eq('id', pc.consent_request_id);
 
+    const decisionEnvelope = buildConsentDecisionEnvelope({
+      decisionId: pc.id as string,
+      decision: 'revoked',
+      reasonCode: CANONICAL_REASON_CODES.CONSENT_REVOKED,
+      tenantId: pc.tenant_id as string,
+      applicationId: pc.application_id as string,
+      consentTokenId: tokenRow?.jti ?? undefined,
+      expiresAt: revokedAt,
+    });
+
     const response: ParentalConsentRevokeResponse = {
       parental_consent_id: pc.id as string,
       revoked_at: revokedAt,
       reason_code: 'CONSENT_REVOKED',
+      decision_envelope: decisionEnvelope,
     };
     assertPayloadSafe(response, 'public_api_response');
 

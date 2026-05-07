@@ -25,7 +25,11 @@ import {
   hashOtp,
   constantTimeEqual,
 } from '../_shared/parental-consent/otp.ts';
-import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import {
+  readParentalConsentFlags,
+  featureDisabledResponse,
+} from '../_shared/parental-consent/feature-flags.ts';
+import { buildConsentDecisionEnvelope } from '../_shared/parental-consent/decision-envelope.ts';
 import { issueParentalConsentToken } from '../_shared/parental-consent/consent-token.ts';
 import { loadActiveSigningKey } from '../_shared/keys.ts';
 import { config } from '../_shared/env.ts';
@@ -63,9 +67,12 @@ serve(async (req) => {
   try {
     const flags = readParentalConsentFlags();
     if (!flags.enabled) {
-      throw new ForbiddenError(
-        'AgeKey Consent module is disabled (AGEKEY_PARENTAL_CONSENT_ENABLED=false).',
-      );
+      log.info('parental_consent_feature_disabled', {
+        fn: FN,
+        trace_id,
+        status: 503,
+      });
+      return featureDisabledResponse(origin);
     }
 
     const url = new URL(req.url);
@@ -182,9 +189,14 @@ serve(async (req) => {
       .select('id, slug')
       .eq('id', reqRow.application_id)
       .single();
+    const { data: ctvRow } = await client
+      .from('consent_text_versions')
+      .select('id, text_hash')
+      .eq('id', reqRow.consent_text_version_id)
+      .single();
 
-    if (!policyRow || !appRow) {
-      throw new InternalError('Failed to load policy/application');
+    if (!policyRow || !appRow || !ctvRow) {
+      throw new InternalError('Failed to load policy/application/consent_text_version');
     }
 
     // Decide reason_code.
@@ -285,6 +297,19 @@ serve(async (req) => {
       };
     }
 
+    const decisionEnvelope = buildConsentDecisionEnvelope({
+      decisionId: pcRow.id as string,
+      decision: decisionStr === 'granted' ? 'approved' : 'denied',
+      reasonCode,
+      tenantId: reqRow.tenant_id as string,
+      applicationId: reqRow.application_id as string,
+      policyId: policyRow.id as string,
+      policyVersion: String(policyRow.current_version),
+      consentTokenId: tokenOut?.jti,
+      expiresAt: tokenOut?.expires_at ?? expiresAt,
+      assuranceLevel: 'AAL-C1',
+    });
+
     const response: ParentalConsentConfirmResponse = {
       consent_request_id: reqRow.id as string,
       parental_consent_id: pcRow.id as string,
@@ -292,6 +317,8 @@ serve(async (req) => {
       decision: decisionStr === 'granted' ? 'approved' : 'denied',
       reason_code: reasonCode,
       token: tokenOut,
+      consent_text_hash: ctvRow.text_hash as string,
+      decision_envelope: decisionEnvelope,
     };
 
     assertPayloadSafe(response, 'public_api_response');

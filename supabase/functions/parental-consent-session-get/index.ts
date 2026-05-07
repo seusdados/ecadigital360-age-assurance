@@ -21,7 +21,15 @@ import {
   hashPanelToken,
   constantTimeEqualString,
 } from '../_shared/parental-consent/panel-token.ts';
-import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import {
+  readParentalConsentFlags,
+  featureDisabledResponse,
+} from '../_shared/parental-consent/feature-flags.ts';
+import {
+  buildConsentDecisionEnvelope,
+  mapRequestStatusToDecision,
+} from '../_shared/parental-consent/decision-envelope.ts';
+import { CANONICAL_REASON_CODES } from '../../../packages/shared/src/taxonomy/reason-codes.ts';
 import {
   type ParentalConsentSessionGetResponse,
 } from '../../../packages/shared/src/schemas/parental-consent.ts';
@@ -53,7 +61,12 @@ serve(async (req) => {
   try {
     const flags = readParentalConsentFlags();
     if (!flags.enabled) {
-      throw new ForbiddenError('AgeKey Consent module is disabled.');
+      log.info('parental_consent_feature_disabled', {
+        fn: FN,
+        trace_id,
+        status: 503,
+      });
+      return featureDisabledResponse(origin);
     }
 
     const url = new URL(req.url);
@@ -115,6 +128,27 @@ serve(async (req) => {
       throw new InternalError('Failed to load policy/consent_text_version');
     }
 
+    const statusStr = reqRow.status as string;
+    const reasonCodeStr =
+      (reqRow.reason_code as string | null) ??
+      (statusStr === 'awaiting_guardian'
+        ? CANONICAL_REASON_CODES.CONSENT_PENDING_GUARDIAN
+        : statusStr === 'awaiting_verification'
+          ? CANONICAL_REASON_CODES.CONSENT_PENDING_VERIFICATION
+          : CANONICAL_REASON_CODES.CONSENT_REQUIRED);
+
+    const decisionEnvelope = buildConsentDecisionEnvelope({
+      decisionId: reqRow.id as string,
+      decision: mapRequestStatusToDecision(statusStr),
+      reasonCode: reasonCodeStr,
+      tenantId: reqRow.tenant_id as string,
+      applicationId: reqRow.application_id as string,
+      policyId: policyRow.id as string,
+      policyVersion: String(policyRow.current_version as number),
+      resource: reqRow.resource as string,
+      expiresAt: reqRow.expires_at as string,
+    });
+
     const response: ParentalConsentSessionGetResponse = {
       consent_request_id: reqRow.id as string,
       status:
@@ -136,6 +170,7 @@ serve(async (req) => {
       expires_at: reqRow.expires_at as string,
       decided_at: (reqRow.decided_at as string | null) ?? null,
       reason_code: (reqRow.reason_code as string | null) ?? null,
+      decision_envelope: decisionEnvelope,
     };
 
     assertPayloadSafe(response, 'public_api_response');

@@ -29,7 +29,10 @@ import {
   hashPanelToken,
   constantTimeEqualString,
 } from '../_shared/parental-consent/panel-token.ts';
-import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import {
+  readParentalConsentFlags,
+  featureDisabledResponse,
+} from '../_shared/parental-consent/feature-flags.ts';
 import { checkRateLimit } from '../_shared/rate-limit.ts';
 import {
   ParentalConsentTextResponseSchema,
@@ -64,7 +67,12 @@ serve(async (req) => {
   try {
     const flags = readParentalConsentFlags();
     if (!flags.enabled) {
-      throw new ForbiddenError('AgeKey Consent module is disabled.');
+      log.info('parental_consent_feature_disabled', {
+        fn: FN,
+        trace_id,
+        status: 503,
+      });
+      return featureDisabledResponse(origin);
     }
 
     const url = new URL(req.url);
