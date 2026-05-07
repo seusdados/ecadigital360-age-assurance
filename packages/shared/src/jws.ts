@@ -37,7 +37,24 @@ export async function signResultToken(
   claims: ResultTokenClaims,
   signing: JwsSigningKey,
 ): Promise<string> {
-  const header = { alg: 'ES256', typ: 'JWT', kid: signing.kid };
+  return signJwsClaims(
+    claims as unknown as Record<string, unknown>,
+    signing,
+    'JWT',
+  );
+}
+
+/**
+ * Generic ES256 signer for any JSON-serialisable claim set. The header `typ`
+ * is configurable so peer modules (e.g. parental-consent) stamp their own
+ * media type without coupling this module to their schema.
+ */
+export async function signJwsClaims(
+  claims: Record<string, unknown>,
+  signing: JwsSigningKey,
+  typ = 'JWT',
+): Promise<string> {
+  const header = { alg: 'ES256', typ, kid: signing.kid };
   const headerB = jsonToB64Url(header);
   const payloadB = jsonToB64Url(claims);
   const signingInput = `${headerB}.${payloadB}`;

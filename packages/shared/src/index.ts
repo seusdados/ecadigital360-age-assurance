@@ -25,3 +25,6 @@ export * from './webhooks/webhook-types.ts';
 export * from './retention/retention-classes.ts';
 export * from './policy/policy-types.ts';
 export * from './policy/policy-engine.ts';
+
+// Parental Consent module (Round 3) — peer of the age-verify decision domain.
+export * from './consent/index.ts';
