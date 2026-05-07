@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { ExternalLink } from 'lucide-react';
 import { requireTenantContext } from '@/lib/agekey/tenant';
 import { CodeBlock } from './code-block';
+import { TokenVerifyForm } from './token-verify-form';
 
 export const metadata: Metadata = { title: 'API' };
 
@@ -151,6 +152,23 @@ export default async function ApiSettingsPage() {
           <CodeBlock label="Buscar sessão" code={curlGetSession} />
           <CodeBlock label="Verificar token" code={curlVerifyToken} />
         </div>
+      </section>
+
+      <section aria-labelledby="token-verify-heading" className="space-y-3">
+        <h2
+          id="token-verify-heading"
+          className="text-sm uppercase tracking-widest text-muted-foreground"
+        >
+          Token verify tester
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Cole um JWT emitido pelo AgeKey e veja{' '}
+          <code className="font-mono">valid</code>,{' '}
+          <code className="font-mono">claims</code> e{' '}
+          <code className="font-mono">revoked</code>. Útil para suporte e
+          como sanity check após rotação de chaves de assinatura.
+        </p>
+        <TokenVerifyForm />
       </section>
     </div>
   );
