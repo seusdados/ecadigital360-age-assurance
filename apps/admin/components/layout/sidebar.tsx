@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldCheck,
   Stamp,
+  Webhook,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Visão geral', icon: Gauge },
   { href: '/verifications', label: 'Verificações', icon: ShieldCheck },
   { href: '/applications', label: 'Aplicações', icon: AppWindow },
+  { href: '/webhooks', label: 'Webhooks', icon: Webhook },
   { href: '/policies', label: 'Políticas', icon: FileText },
   { href: '/issuers', label: 'Emissores', icon: Stamp },
   { href: '/audit', label: 'Auditoria', icon: Activity },

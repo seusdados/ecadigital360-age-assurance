@@ -220,6 +220,91 @@ export interface ApplicationRotateKeyResult {
 }
 
 // ---------------------------------------------------------------
+// WEBHOOKS (AK-P1-08)
+// ---------------------------------------------------------------
+
+export type WebhookEventType =
+  | 'verification.created'
+  | 'verification.completed'
+  | 'verification.expired'
+  | 'verification.cancelled'
+  | 'token.revoked'
+  | 'policy.updated'
+  | 'application.suspended';
+
+export type WebhookDeliveryStatus =
+  | 'pending'
+  | 'delivered'
+  | 'failed'
+  | 'dead_letter';
+
+export interface WebhookEndpointItem {
+  id: string;
+  tenant_id: string;
+  application_id: string;
+  name: string;
+  url: string;
+  status: 'active' | 'inactive' | 'suspended';
+  event_types: string[];
+  created_at: string;
+  updated_at: string;
+  last_delivery_status: WebhookDeliveryStatus | null;
+  last_delivery_at: string | null;
+}
+
+export interface WebhookWriteInput {
+  id?: string;
+  application_id: string;
+  name: string;
+  url: string;
+  event_types: string[];
+  active?: boolean;
+  delete?: boolean;
+}
+
+export interface WebhookWriteResult {
+  id: string;
+  status: 'created' | 'updated' | 'deleted';
+  raw_secret: string | null;
+}
+
+export interface WebhookRotateResult {
+  id: string;
+  raw_secret: string;
+  rotated_at: string;
+}
+
+export interface WebhookDeliveryItem {
+  id: string;
+  endpoint_id: string;
+  tenant_id: string;
+  event_type: string;
+  payload_json: Record<string, unknown>;
+  idempotency_key: string;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  next_attempt_at: string;
+  last_response_code: number | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookDeliveriesListParams {
+  endpoint_id: string;
+  status?: WebhookDeliveryStatus;
+  since?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface WebhookDeliveriesListResult {
+  items: WebhookDeliveryItem[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+// ---------------------------------------------------------------
 // AUDIT (Slice 5)
 // ---------------------------------------------------------------
 
@@ -324,6 +409,30 @@ export const agekey = {
         mime_type: string | null;
         size_bytes: number | null;
       }>('/proof-artifact-url', { method: 'POST', body: { artifact_id } }),
+  },
+  webhooks: {
+    list: (params: { application_id?: string; active?: boolean } = {}) =>
+      request<{ items: WebhookEndpointItem[] }>('/webhooks-list', {
+        query: {
+          application_id: params.application_id,
+          active: params.active,
+        },
+      }),
+    write: (body: WebhookWriteInput) =>
+      request<WebhookWriteResult>('/webhooks-write', {
+        method: 'POST',
+        body,
+      }),
+    rotateSecret: (id: string) =>
+      request<WebhookRotateResult>('/webhooks-rotate-secret', {
+        method: 'POST',
+        body: { id },
+      }),
+    listDeliveries: (params: WebhookDeliveriesListParams) =>
+      request<WebhookDeliveriesListResult>('/webhooks-deliveries-list', {
+        method: 'POST',
+        body: params,
+      }),
   },
   audit: {
     list: (params: AuditListParams = {}) =>
