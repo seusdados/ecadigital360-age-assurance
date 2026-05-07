@@ -86,7 +86,7 @@ serve(async (req) => {
     );
 
     // Resolve policy + version snapshot.
-    const { snapshot: policy, versionId: policyVersionId } = await resolvePolicy(
+    const { snapshot: policy, policy_version_id: policyVersionId } = await resolvePolicy(
       client,
       principal.tenantId,
       input.policy_slug,
