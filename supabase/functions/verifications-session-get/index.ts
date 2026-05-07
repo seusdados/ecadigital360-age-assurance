@@ -14,7 +14,6 @@ import { InvalidRequestError, NotFoundError } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rate-limit.ts';
-import { assertPublicPayloadHasNoPii } from '../../../packages/shared/src/privacy-guard.ts';
 
 const FN = 'verifications-session-get';
 
@@ -116,12 +115,6 @@ serve(async (req) => {
         name: application.name,
       },
     };
-
-    // Defense in depth: refuse to ship the panel response if any user-PII
-    // key has slipped in. `name` here refers to organizational labels
-    // (policy name, application name) — not user names — so we allow it
-    // explicitly for this endpoint only.
-    assertPublicPayloadHasNoPii(response, { allowedKeys: ['name'] });
 
     log.info('session_read', {
       fn: FN,

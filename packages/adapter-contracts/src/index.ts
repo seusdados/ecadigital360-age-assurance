@@ -102,9 +102,6 @@ export interface VerificationAdapter {
  * sem precisar de um caminho HTTP — o verifier-core os captura
  * e converte em verification_results.decision = 'denied'.
  */
-export * from './gateway-providers.ts';
-export * from './zkp-bbs-contract.ts';
-
 export class AdapterDenied extends Error {
   readonly reason_code: ReasonCode;
   constructor(reason_code: ReasonCode, message?: string) {

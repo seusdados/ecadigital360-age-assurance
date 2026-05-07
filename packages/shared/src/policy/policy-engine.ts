@@ -1,197 +1,107 @@
-// Policy engine — pure functions that turn an adapter attestation into a
-// canonical decision envelope.
+// Policy Engine canônico — helpers puros.
 //
-// The engine knows nothing about HTTP, the database or signing. It is the
-// deterministic heart of the Core: given a policy and a typed attestation,
-// it returns the same envelope every time. Network/IO concerns live in the
-// edge functions that wrap it.
+// Estes helpers não substituem o engine das Edge Functions; eles
+// alimentam-no com decisões consistentes e reutilizáveis. São puros,
+// não fazem I/O, não conhecem banco de dados.
 //
-// Three responsibilities:
-//   1. Check the assurance level required by the policy is satisfied.
-//   2. Pick the adapter method according to client capabilities and the
-//      policy's `method_priority`.
-//   3. Build the DecisionEnvelope (the Core's public-safe output).
-//
-// Consent and Safety hooks are NOT yet wired here — the engine returns a
-// `policy_only` decision and leaves room for those modules to layer on top
-// without breaking the envelope shape.
-//
-// Reference: docs/specs/agekey-core-canonical-contracts.md §Policy engine.
+// Documentação: docs/specs/agekey-policy-engine-canonical.md
 
-import {
-  ASSURANCE_RANK,
-  type AssuranceLevel,
-  type ClientCapabilities,
-  type VerificationMethod,
-} from '../types.ts';
-import { REASON_CODES, type ReasonCode } from '../reason-codes.ts';
-import {
-  DECISION_ENVELOPE_VERSION,
-  type DecisionAdapterEvidence,
-  type DecisionEnvelope,
-  assertDecisionEnvelopeIsPublicSafe,
-} from '../decision/decision-envelope.ts';
-import type { PolicyDefinition } from './policy-types.ts';
-
-/** Available adapter methods for the current platform. */
-export interface AdapterAvailability {
-  zkp: boolean;
-  vc: boolean;
-  gateway: boolean;
-  fallback: boolean;
-}
-
-const ALL_METHODS: VerificationMethod[] = ['zkp', 'vc', 'gateway', 'fallback'];
+import type { AgeKeyPolicy, AgeKeyPolicyDomain } from './policy-types.ts';
 
 /**
- * Pick the first method in `policy.method_priority` that is reported as
- * available. Returns `null` when no method matches — the caller should map
- * that to `POLICY_ASSURANCE_UNMET` or trigger the fallback flow.
+ * Indica se a política aceita o domínio informado. Política deve estar
+ * ativa.
  */
-export function selectAdapterMethod(
-  policy: PolicyDefinition,
-  availability: AdapterAvailability,
-): VerificationMethod | null {
-  for (const method of policy.method_priority) {
-    if (availability[method]) return method;
-  }
-  return null;
-}
-
-/**
- * Heuristic mapping from `client_capabilities` to adapter availability.
- * Conservative on purpose — when a capability is missing or unknown the
- * adapter is treated as unavailable and the engine falls through to the
- * next method in the priority list.
- */
-export function deriveAdapterAvailability(
-  capabilities: ClientCapabilities | undefined,
-): AdapterAvailability {
-  const caps = capabilities ?? {};
-  return {
-    // ZKP requires a wallet that can present a BBS/BBS+ proof.
-    zkp: Boolean(caps.wallet_present),
-    // VC works whenever a wallet is present — works for both web and native.
-    vc: Boolean(caps.wallet_present || caps.digital_credentials_api),
-    // Gateway is a hosted flow — always available.
-    gateway: true,
-    // Fallback (self-declaration + signals) is always available; the engine
-    // still respects the policy's method_priority.
-    fallback: true,
-  };
-}
-
-/**
- * `meetsAssurance(reported, required)` — true when `reported` is at least as
- * strong as `required` on the AssuranceLevel ladder.
- */
-export function meetsAssurance(
-  reported: AssuranceLevel,
-  required: AssuranceLevel,
+export function policySupportsDomain(
+  policy: AgeKeyPolicy,
+  domain: AgeKeyPolicyDomain,
 ): boolean {
-  return ASSURANCE_RANK[reported] >= ASSURANCE_RANK[required];
+  if (policy.status !== 'active') return false;
+  return policy.domains.includes(domain);
 }
 
 /**
- * Adapter attestation shape. The Core's adapters all converge to this shape
- * before the policy engine sees them — the engine never inspects the raw
- * proof, only the derived flags.
- */
-export interface AdapterAttestation {
-  method: VerificationMethod;
-  /** `true` when the adapter could verify the threshold; `null` when neutral. */
-  threshold_satisfied: boolean | null;
-  reported_assurance: AssuranceLevel;
-  reason_code: ReasonCode;
-  evidence: DecisionAdapterEvidence;
-}
-
-export interface PolicyEvaluation {
-  decision: 'approved' | 'denied' | 'needs_review';
-  reason_code: ReasonCode;
-  threshold_satisfied: boolean;
-}
-
-/**
- * Apply the policy to an attestation. Pure; no I/O.
+ * Indica se a política bloqueia o recurso (`blocked_if_minor` por idade
+ * abaixo do limiar OU status `retired`).
  *
- * - If the attestation already failed (`threshold_satisfied !== true` or a
- *   non-positive reason code), the engine surfaces the adapter's reason as-is.
- * - If the assurance level is below `policy.required_assurance_level`, the
- *   engine downgrades the decision to `denied` with `POLICY_ASSURANCE_UNMET`.
- * - Otherwise the engine returns `approved`.
+ * Retorna `false` por omissão — caller deve checar status ativo
+ * separadamente quando necessário.
  */
-export function evaluatePolicy(
-  policy: PolicyDefinition,
-  attestation: AdapterAttestation,
-): PolicyEvaluation {
-  if (attestation.threshold_satisfied !== true) {
-    return {
-      decision: 'denied',
-      reason_code: attestation.reason_code,
-      threshold_satisfied: false,
-    };
-  }
-  if (!meetsAssurance(attestation.reported_assurance, policy.required_assurance_level)) {
-    return {
-      decision: 'denied',
-      reason_code: REASON_CODES.POLICY_ASSURANCE_UNMET,
-      threshold_satisfied: false,
-    };
-  }
-  return {
-    decision: 'approved',
-    reason_code: attestation.reason_code,
-    threshold_satisfied: true,
-  };
-}
-
-export interface BuildEnvelopeInput {
-  policy: PolicyDefinition;
-  tenant_id: string;
-  application_id: string;
-  session_id: string;
-  attestation: AdapterAttestation;
-  external_user_ref: string | null;
-  /** Unix seconds. Defaults to `Math.floor(Date.now() / 1000)`. */
-  now_seconds?: number;
+export function isResourceHardBlocked(policy: AgeKeyPolicy): boolean {
+  if (policy.status === 'retired') return true;
+  if (policy.age?.blocked_if_minor === true) return true;
+  return false;
 }
 
 /**
- * Compose `evaluatePolicy` + envelope construction. The result is validated
- * against `DecisionEnvelopeSchema` and the privacy guard before being
- * returned, so the caller cannot accidentally introduce PII.
+ * Conflito canônico: se a política bloqueia o recurso por regra (ex.:
+ * `blocked_if_minor`), o consentimento parental NÃO libera esse recurso.
+ * Esse helper formaliza essa regra.
  */
-export function buildDecisionEnvelope(
-  input: BuildEnvelopeInput,
-): DecisionEnvelope {
-  const evaluation = evaluatePolicy(input.policy, input.attestation);
-  const issuedAt = input.now_seconds ?? Math.floor(Date.now() / 1000);
-  const expiresAt = issuedAt + input.policy.token_ttl_seconds;
-  const envelope: DecisionEnvelope = {
-    envelope_version: DECISION_ENVELOPE_VERSION,
-    tenant_id: input.tenant_id,
-    application_id: input.application_id,
-    session_id: input.session_id,
-    policy: {
-      id: input.policy.id,
-      slug: input.policy.slug,
-      version: input.policy.current_version,
-    },
-    decision: evaluation.decision,
-    threshold_satisfied: evaluation.threshold_satisfied,
-    age_threshold: input.policy.age_threshold,
-    age_band: input.policy.age_band,
-    method: input.attestation.method,
-    assurance_level: input.attestation.reported_assurance,
-    reason_code: evaluation.reason_code,
-    evidence: input.attestation.evidence,
-    issued_at: issuedAt,
-    expires_at: expiresAt,
-    external_user_ref: input.external_user_ref,
-  };
-  return assertDecisionEnvelopeIsPublicSafe(envelope);
+export function consentCannotOverridePolicyBlock(
+  policy: AgeKeyPolicy,
+): boolean {
+  return isResourceHardBlocked(policy);
 }
 
-/** Surfaced for tests / introspection. */
-export const POLICY_ENGINE_FALLBACK_METHODS = ALL_METHODS;
+/**
+ * Regras formais expressas pelo policy engine canônico:
+ *
+ * 1. Consentimento genérico não libera recurso específico.
+ *    Cada `parental_consent` é amarrado a `policy_id` + `policy_version`
+ *    + `purpose_codes` declarados explicitamente.
+ *
+ * 2. Mudança material de finalidade exige novo consentimento.
+ *    Detecta-se mudança material quando `policy.consent.purpose_codes`
+ *    OU `policy.consent.data_categories` mudam — ou seja, exige-se
+ *    `policy_version` novo.
+ *
+ * 3. Consentimento expirado não pode ser aceito por fallback silencioso.
+ *    O verificador deve devolver `decision = "expired"` com
+ *    `reason_code = "CONSENT_EXPIRED"`.
+ *
+ * 4. Safety rule não pode acessar conteúdo bruto no MVP.
+ *    Garantia: `safety.enabled` só convive com `safety_event_v1` no
+ *    privacy guard; conteúdo bruto é proibido.
+ *
+ * 5. Safety rule só pode gerar razão, severidade e ação proporcional.
+ *    Garantia: o decision envelope só aceita `risk_category`, `severity`,
+ *    `actions` controlados — nunca conclusão jurídica.
+ *
+ * 6. Policy engine deve impedir conflito entre `blocked_by_policy` e
+ *    consentimento. Garantia: `consentCannotOverridePolicyBlock` acima.
+ */
+export function describeCanonicalPolicyRules(): string[] {
+  return [
+    'consent_generic_does_not_unlock_specific_resource',
+    'material_purpose_change_requires_new_consent',
+    'expired_consent_cannot_be_silent_fallback',
+    'safety_rules_cannot_access_raw_content_in_mvp',
+    'safety_rules_cannot_emit_legal_conclusions',
+    'policy_block_cannot_be_overridden_by_consent',
+  ];
+}
+
+/**
+ * Ergonomia: extrai limiar etário da política em forma numérica
+ * inteira. Apenas o limiar declarado — nunca a idade do usuário.
+ *
+ * Retorna `null` quando não há `policy_age_threshold` declarado.
+ */
+export function policyAgeThresholdAsNumber(
+  policy: AgeKeyPolicy,
+): 13 | 16 | 18 | 21 | null {
+  const t = policy.age?.policy_age_threshold;
+  switch (t) {
+    case '13+':
+      return 13;
+    case '16+':
+      return 16;
+    case '18+':
+      return 18;
+    case '21+':
+      return 21;
+    default:
+      return null;
+  }
+}

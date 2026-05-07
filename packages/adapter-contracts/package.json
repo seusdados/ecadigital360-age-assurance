@@ -7,19 +7,15 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./gateway-providers": "./src/gateway-providers.ts",
-    "./zkp-bbs-contract": "./src/zkp-bbs-contract.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@agekey/shared": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.9"
+    "typescript": "^5.6.3"
   }
 }

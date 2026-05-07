@@ -1,140 +1,337 @@
 // =============================================================================
-// @agekey/sdk-js/safety — Safety Signals helper (server-side)
+// @agekey/sdk-js — Safety Signals helpers
 // =============================================================================
 //
-// MVP wrapper around the Safety Signals ingest endpoint. The SDK does NOT
-// process content — it accepts only the same metadata shape declared by
-// `SafetyEventIngestRequestSchema` in `@agekey/shared`. Calling
-// `beforeSendMessage` / `beforeUploadMedia` with raw content throws at
-// runtime so the integrator is forced to keep the content in their own
-// data plane.
+// Stubs honestos para apps cliente (browser ou React Native) chamarem
+// AgeKey Safety. **Nada deste módulo envia conteúdo bruto ao servidor**:
 //
-// The honest stubs make the v1 contract explicit:
-//   * `trackEvent(event)`    — sends the metadata to the AgeKey ingest API.
-//   * `getDecision(eventId)` — convenience read-back (P3, not implemented).
-//   * `beforeSendMessage()`  — refuses if `text/body/message` is provided.
-//   * `beforeUploadMedia()`  — refuses if `bytes/blob/file` is provided.
+//   - `agekey.safety.trackEvent(...)` — envia metadata-only.
+//   - `agekey.safety.getDecision(...)` — pre-flight read-only.
+//   - `beforeSendMessage(metadata)` — recebe metadata da mensagem (tipo,
+//     comprimento, recipient, has_external_url) e retorna decisão.
+//     **Nunca recebe o texto.**
+//   - `beforeUploadMedia(metadata)` — idem para mídia.
 //
-// Any future content-aware analysis must ship behind a new feature flag and
-// a coordinated round.
+// O endpoint de upload da app cliente fica responsável por respeitar a
+// decisão (allow / soft_block / hard_block / step_up_required).
+//
+// IMPORTANT: API key tenant fica server-side. Estes helpers chamam um
+// endpoint proxy do app cliente, não diretamente o AgeKey. O proxy é
+// configurado via `safetyEndpointBase` (URL do app cliente) que repassa
+// para o AgeKey adicionando `X-AgeKey-API-Key`.
 
-import {
-  REASON_CODES,
-  type SafetyEventIngestRequest,
-  type SafetyEventIngestResponse,
-} from '@agekey/shared';
+export type SafetyEventType =
+  | 'message_sent'
+  | 'message_received'
+  | 'media_upload'
+  | 'external_link_shared'
+  | 'profile_view'
+  | 'follow_request'
+  | 'report_filed'
+  | 'private_chat_started';
 
-const DEFAULT_BASE_URL = 'https://staging.agekey.com.br/v1';
+export type SafetySubjectAgeState =
+  | 'minor'
+  | 'teen'
+  | 'adult'
+  | 'unknown'
+  | 'eligible_under_policy'
+  | 'not_eligible_under_policy'
+  | 'blocked_under_policy';
+
+export type SafetyDecision =
+  | 'no_risk_signal'
+  | 'logged'
+  | 'soft_blocked'
+  | 'hard_blocked'
+  | 'step_up_required'
+  | 'parental_consent_required'
+  | 'needs_review';
+
+export type SafetyShortDecision =
+  | 'no_risk_signal'
+  | 'soft_blocked'
+  | 'hard_blocked'
+  | 'step_up_required'
+  | 'parental_consent_required';
+
+export interface TrackEventInput {
+  eventType: SafetyEventType;
+  actorSubjectRefHmac: string;
+  counterpartySubjectRefHmac?: string;
+  actorAgeState?: SafetySubjectAgeState;
+  counterpartyAgeState?: SafetySubjectAgeState;
+  /**
+   * Metadata SEM conteúdo. Permitido: tamanho, tipo, has_external_url,
+   * has_media, mime_type, duration_seconds, width, height, count,
+   * timestamps, language_hint.
+   * NUNCA incluir: message, raw_text, image, video, audio, birthdate,
+   * email, phone, name, document.
+   */
+  metadata?: Record<string, unknown>;
+  /** Hash SHA-256 hex computado client-side. Opcional. */
+  contentHash?: string;
+  locale?: string;
+  occurredAt?: string;
+}
+
+export interface TrackEventResult {
+  eventId: string;
+  decision: SafetyDecision;
+  reasonCodes: string[];
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  alertId: string | null;
+  stepUpSessionId: string | null;
+}
+
+export interface GetDecisionInput {
+  eventType: SafetyEventType;
+  actorSubjectRefHmac: string;
+  counterpartySubjectRefHmac?: string;
+  actorAgeState?: SafetySubjectAgeState;
+  counterpartyAgeState?: SafetySubjectAgeState;
+}
+
+export interface GetDecisionResult {
+  decision: SafetyShortDecision;
+  reasonCodes: string[];
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  riskCategory: string;
+  actions: string[];
+  stepUpRequired: boolean;
+  parentalConsentRequired: boolean;
+}
 
 export interface SafetyClientOptions {
-  apiKey: string;
-  baseUrl?: string;
+  /**
+   * URL do proxy do app cliente que repassa para AgeKey adicionando
+   * X-AgeKey-API-Key. Ex.: 'https://app.example.com/api/agekey'.
+   */
+  safetyEndpointBase: string;
   fetch?: typeof globalThis.fetch;
 }
 
-export interface BeforeSendInput {
-  /** Same opaque ref the relying party uses for the actor. */
-  actor_external_ref: string;
-  /** Optional opaque ref for the counterparty. */
-  counterparty_external_ref?: string;
-  /** Bounded metadata. PII and content are rejected. */
-  metadata?: Record<string, string | number | boolean | null>;
+const FORBIDDEN_METADATA_KEYS = new Set<string>([
+  'message',
+  'raw_text',
+  'message_body',
+  'image',
+  'image_data',
+  'video',
+  'video_data',
+  'audio',
+  'audio_data',
+  'birthdate',
+  'date_of_birth',
+  'dob',
+  'age',
+  'exact_age',
+  'name',
+  'full_name',
+  'civil_name',
+  'cpf',
+  'rg',
+  'passport',
+  'document',
+  'email',
+  'phone',
+  'selfie',
+  'face',
+  'biometric',
+  'address',
+  'ip',
+  'gps',
+  'latitude',
+  'longitude',
+]);
+
+function assertMetadataSafe(metadata: Record<string, unknown> | undefined): void {
+  if (!metadata) return;
+  function visit(value: unknown, path: string): void {
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => visit(v, `${path}[${i}]`));
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      const norm = key.toLowerCase().replace(/-/g, '_');
+      if (FORBIDDEN_METADATA_KEYS.has(norm)) {
+        throw new Error(
+          `AgeKey Safety: metadata key "${path}.${key}" is forbidden in v1 (metadata-only).`,
+        );
+      }
+      visit(child, `${path}.${key}`);
+    }
+  }
+  visit(metadata, '$');
 }
 
 export class AgeKeySafetyClient {
-  private readonly apiKey: string;
-  private readonly baseUrl: string;
+  private readonly base: string;
   private readonly fetchImpl: typeof globalThis.fetch;
 
-  constructor(options: SafetyClientOptions) {
-    if (!options.apiKey) throw new Error('apiKey is required');
-    this.apiKey = options.apiKey;
-    this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
-    const f = options.fetch ?? globalThis.fetch;
-    if (typeof f !== 'function') {
-      throw new Error('No fetch implementation available');
+  constructor(opts: SafetyClientOptions) {
+    if (!opts.safetyEndpointBase) {
+      throw new Error('safetyEndpointBase is required');
     }
+    this.base = opts.safetyEndpointBase.replace(/\/+$/, '');
+    const f = opts.fetch ?? globalThis.fetch;
+    if (typeof f !== 'function') throw new Error('No fetch implementation');
     this.fetchImpl = f.bind(globalThis);
   }
 
   /**
-   * Send a metadata-only safety event. The server applies the canonical
-   * privacy guard; any forbidden key returns a 400 with reason
-   * `SAFETY_RAW_CONTENT_REJECTED` or `SAFETY_PII_DETECTED`.
+   * Track an event. Sends metadata only; never content.
+   *
+   * The proxy URL `${base}/safety-event-ingest` receives the body and
+   * relays to AgeKey adding the tenant's API key.
    */
-  async trackEvent(
-    event: SafetyEventIngestRequest,
-  ): Promise<SafetyEventIngestResponse> {
-    const res = await this.fetchImpl(`${this.baseUrl}/safety/event-ingest`, {
+  async trackEvent(input: TrackEventInput): Promise<TrackEventResult> {
+    assertMetadataSafe(input.metadata);
+
+    const body = {
+      event_type: input.eventType,
+      actor_subject_ref_hmac: input.actorSubjectRefHmac,
+      ...(input.counterpartySubjectRefHmac
+        ? { counterparty_subject_ref_hmac: input.counterpartySubjectRefHmac }
+        : {}),
+      ...(input.actorAgeState ? { actor_age_state: input.actorAgeState } : {}),
+      ...(input.counterpartyAgeState
+        ? { counterparty_age_state: input.counterpartyAgeState }
+        : {}),
+      metadata: input.metadata ?? {},
+      ...(input.contentHash ? { content_hash: input.contentHash } : {}),
+      ...(input.locale ? { locale: input.locale } : {}),
+      ...(input.occurredAt ? { occurred_at: input.occurredAt } : {}),
+    };
+
+    const resp = await this.fetchImpl(`${this.base}/safety-event-ingest`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-AgeKey-API-Key': this.apiKey,
-      },
-      body: JSON.stringify(event),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`safety ingest failed: ${res.status} ${body}`);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`AgeKey Safety trackEvent failed: ${resp.status} ${text}`);
     }
-    return (await res.json()) as SafetyEventIngestResponse;
-  }
-
-  /**
-   * Lookup helper. **Not implemented in MVP** — returns a 501-style
-   * indication so integrators don't depend on a missing surface.
-   */
-  async getDecision(
-    _safetyEventId: string,
-  ): Promise<{ implemented: false; reason_code: string }> {
+    const data = (await resp.json()) as {
+      event_id: string;
+      decision: SafetyDecision;
+      reason_codes: string[];
+      severity: TrackEventResult['severity'];
+      alert_id: string | null;
+      step_up_session_id: string | null;
+    };
     return {
-      implemented: false,
-      reason_code: REASON_CODES.SAFETY_OK,
+      eventId: data.event_id,
+      decision: data.decision,
+      reasonCodes: data.reason_codes,
+      severity: data.severity,
+      alertId: data.alert_id,
+      stepUpSessionId: data.step_up_session_id,
     };
   }
 
-  /**
-   * Pre-send guard for messages. **Stub** — Safety v1 is metadata-only and
-   * the `text` argument is **rejected** to make this contract explicit.
-   * Use `trackEvent({ event_type: 'message_send_attempt', ... })` instead.
-   */
-  async beforeSendMessage(input: BeforeSendInput & { text?: never }): Promise<{
-    decision: 'approved';
-    reason_code: string;
-    note: string;
-  }> {
-    if ((input as unknown as Record<string, unknown>).text != null) {
-      throw new Error(
-        'beforeSendMessage refuses raw text in Safety v1 (metadata-only). ' +
-          'Use trackEvent with metadata-only fields.',
-      );
+  async getDecision(input: GetDecisionInput): Promise<GetDecisionResult> {
+    const body = {
+      event_type: input.eventType,
+      actor_subject_ref_hmac: input.actorSubjectRefHmac,
+      ...(input.counterpartySubjectRefHmac
+        ? { counterparty_subject_ref_hmac: input.counterpartySubjectRefHmac }
+        : {}),
+      ...(input.actorAgeState ? { actor_age_state: input.actorAgeState } : {}),
+      ...(input.counterpartyAgeState
+        ? { counterparty_age_state: input.counterpartyAgeState }
+        : {}),
+    };
+    const resp = await this.fetchImpl(`${this.base}/safety-rule-evaluate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`AgeKey Safety getDecision failed: ${resp.status} ${text}`);
     }
+    const data = (await resp.json()) as {
+      decision: SafetyShortDecision;
+      reason_codes: string[];
+      severity: GetDecisionResult['severity'];
+      risk_category: string;
+      actions: string[];
+      step_up_required: boolean;
+      parental_consent_required: boolean;
+    };
     return {
-      decision: 'approved',
-      reason_code: REASON_CODES.SAFETY_OK,
-      note: 'Safety v1 is metadata-only — call trackEvent instead.',
+      decision: data.decision,
+      reasonCodes: data.reason_codes,
+      severity: data.severity,
+      riskCategory: data.risk_category,
+      actions: data.actions,
+      stepUpRequired: data.step_up_required,
+      parentalConsentRequired: data.parental_consent_required,
     };
   }
 
+  // ====================================================================
+  // Stubs honestos (V2/V3) — delegam para getDecision com metadata
+  // explícita. NÃO recebem texto, imagem, vídeo ou áudio.
+  // ====================================================================
+
   /**
-   * Pre-upload guard for media. **Stub** — Safety v1 does not analyse
-   * media bytes. Provide an `artifact_hash` in trackEvent for the
-   * tamper-evidence anchor and keep the bytes on your side.
+   * Hook para chamar ANTES de enviar uma mensagem. **Nunca passa o
+   * texto da mensagem.** O caller informa apenas:
+   *  - destinatário (subject_ref_hmac);
+   *  - estado etário do destinatário (se conhecido);
+   *  - se a mensagem contém link externo (boolean);
+   *  - locale.
+   *
+   * Devolve a decisão (allow / soft_block / step_up). O caller é
+   * responsável por respeitá-la.
    */
-  async beforeUploadMedia(
-    input: BeforeSendInput & { bytes?: never; blob?: never; file?: never },
-  ): Promise<{ decision: 'approved'; reason_code: string; note: string }> {
-    for (const k of ['bytes', 'blob', 'file']) {
-      if ((input as unknown as Record<string, unknown>)[k] != null) {
-        throw new Error(
-          `beforeUploadMedia refuses raw ${k} in Safety v1 (metadata-only).`,
-        );
-      }
-    }
-    return {
-      decision: 'approved',
-      reason_code: REASON_CODES.SAFETY_OK,
-      note: 'Safety v1 does not analyse media bytes. Pass artifact_hash in trackEvent.',
-    };
+  async beforeSendMessage(input: {
+    senderSubjectRefHmac: string;
+    senderAgeState?: SafetySubjectAgeState;
+    recipientSubjectRefHmac: string;
+    recipientAgeState?: SafetySubjectAgeState;
+    hasExternalLink?: boolean;
+    locale?: string;
+  }): Promise<GetDecisionResult> {
+    return this.getDecision({
+      eventType: input.hasExternalLink
+        ? 'external_link_shared'
+        : 'message_sent',
+      actorSubjectRefHmac: input.senderSubjectRefHmac,
+      counterpartySubjectRefHmac: input.recipientSubjectRefHmac,
+      ...(input.senderAgeState ? { actorAgeState: input.senderAgeState } : {}),
+      ...(input.recipientAgeState
+        ? { counterpartyAgeState: input.recipientAgeState }
+        : {}),
+    });
+  }
+
+  /**
+   * Hook para chamar ANTES de fazer upload de mídia. **Nunca recebe os
+   * bytes.** Caller informa apenas mime_type, size_bytes e o
+   * destinatário.
+   */
+  async beforeUploadMedia(input: {
+    senderSubjectRefHmac: string;
+    senderAgeState?: SafetySubjectAgeState;
+    recipientSubjectRefHmac: string;
+    recipientAgeState?: SafetySubjectAgeState;
+    mimeType?: string;
+    sizeBytes?: number;
+    locale?: string;
+  }): Promise<GetDecisionResult> {
+    return this.getDecision({
+      eventType: 'media_upload',
+      actorSubjectRefHmac: input.senderSubjectRefHmac,
+      counterpartySubjectRefHmac: input.recipientSubjectRefHmac,
+      ...(input.senderAgeState ? { actorAgeState: input.senderAgeState } : {}),
+      ...(input.recipientAgeState
+        ? { counterpartyAgeState: input.recipientAgeState }
+        : {}),
+    });
   }
 }

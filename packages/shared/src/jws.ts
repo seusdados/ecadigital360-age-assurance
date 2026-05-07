@@ -37,24 +37,7 @@ export async function signResultToken(
   claims: ResultTokenClaims,
   signing: JwsSigningKey,
 ): Promise<string> {
-  return signJwsClaims(
-    claims as unknown as Record<string, unknown>,
-    signing,
-    'JWT',
-  );
-}
-
-/**
- * Generic ES256 signer for any JSON-serialisable claim set. The header `typ`
- * is configurable so peer modules (e.g. parental-consent) stamp their own
- * media type without coupling this module to their schema.
- */
-export async function signJwsClaims(
-  claims: Record<string, unknown>,
-  signing: JwsSigningKey,
-  typ = 'JWT',
-): Promise<string> {
-  const header = { alg: 'ES256', typ, kid: signing.kid };
+  const header = { alg: 'ES256', typ: 'JWT', kid: signing.kid };
   const headerB = jsonToB64Url(header);
   const payloadB = jsonToB64Url(claims);
   const signingInput = `${headerB}.${payloadB}`;
@@ -158,94 +141,6 @@ export async function verifyResultToken(
   }
 
   return { valid: true, claims, kid: header.kid };
-}
-
-// =====================================================================
-// Public-only JWK guard (AK-P0-08)
-// =====================================================================
-// Names of JWK members that MUST NEVER appear in a public JWKS document.
-// Source: RFC 7518 §6 (JSON Web Algorithms) — the private/secret members
-// for EC, RSA, and oct keys. Exposing any of these via /.well-known/jwks.json
-// would compromise signing keys.
-//
-//   EC private:  d
-//   RSA private: d, p, q, dp, dq, qi, oth
-//   oct (HS*):   k
-//
-export const PRIVATE_JWK_MEMBERS = Object.freeze([
-  'd',
-  'p',
-  'q',
-  'dp',
-  'dq',
-  'qi',
-  'oth',
-  'k',
-] as const);
-
-/**
- * Returns the list of forbidden private members present in `jwk`. Empty
- * array means the JWK is safe to publish.
- */
-export function findPrivateJwkMembers(jwk: unknown): string[] {
-  if (!jwk || typeof jwk !== 'object') return [];
-  const out: string[] = [];
-  for (const m of PRIVATE_JWK_MEMBERS) {
-    if (Object.prototype.hasOwnProperty.call(jwk, m)) out.push(m);
-  }
-  return out;
-}
-
-/**
- * Throws if `jwk` contains any private/secret member. Use before serving
- * a JWK over `/.well-known/jwks.json` or any other public surface.
- *
- * Throws with a generic message — do NOT include the JWK contents in the
- * error or logs (they may contain partial private material).
- */
-export function assertJwkIsPublic(jwk: unknown): void {
-  const found = findPrivateJwkMembers(jwk);
-  if (found.length > 0) {
-    throw new Error(
-      `JWK contains private members and cannot be published: ${found.join(',')}`,
-    );
-  }
-}
-
-/**
- * Returns a new JWK object containing only the explicitly-allowed public
- * members. Anything outside the allowlist is dropped — including any
- * `d/p/q/dp/dq/qi/oth/k` member that might have leaked into storage by
- * mistake. The returned object is safe to publish.
- */
-export function pickPublicJwk(jwk: unknown): JsonWebKey {
-  if (!jwk || typeof jwk !== 'object') {
-    throw new Error('pickPublicJwk: jwk is not an object');
-  }
-  const src = jwk as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  // Allowlist of public JWK members for EC + RSA + OKP, plus standard
-  // metadata fields. Everything else is dropped.
-  const PUBLIC_MEMBERS = [
-    'kty',
-    'crv',
-    'x',
-    'y', // EC public coords
-    'n',
-    'e', // RSA public params
-    'kid',
-    'use',
-    'alg',
-    'key_ops',
-    'x5c',
-    'x5t',
-    'x5t#S256',
-    'x5u',
-  ];
-  for (const m of PUBLIC_MEMBERS) {
-    if (Object.prototype.hasOwnProperty.call(src, m)) out[m] = src[m];
-  }
-  return out as JsonWebKey;
 }
 
 export async function generateEs256KeyPair(): Promise<{

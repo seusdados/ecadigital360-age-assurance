@@ -1,62 +1,57 @@
-// POST /v1/safety/alert-dispatch — manually trigger webhook re-emission.
+// POST /v1/safety/alert/:id/dispatch
 //
-// Auth: X-AgeKey-API-Key. Used by the admin UI to retry a failed
-// `safety.alert_*` delivery without mutating the alert. The SQL trigger
-// `trg_safety_alerts_fanout` already runs on INSERT/UPDATE of
-// safety_alerts; this endpoint simulates an UPDATE that bumps a metadata
-// field, so the trigger fires for the same status (idempotent).
+// Operações de admin no alerta:
+//   action: 'acknowledge' | 'escalate' | 'resolve' | 'dismiss'.
 //
-// Reference: docs/modules/safety-signals/EDGE_FUNCTIONS.md §alert-dispatch
+// Auth: X-AgeKey-API-Key (admin do tenant via api_key dedicada — em
+// rodada futura, exigir role 'admin' via auth-jwt).
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { z } from 'zod';
-import {
-  SAFETY_FEATURE_FLAGS,
-  readSafetyFeatureFlag,
-} from '../../../packages/shared/src/index.ts';
 import { authenticateApiKey } from '../_shared/auth.ts';
 import { db, setTenantContext } from '../_shared/db.ts';
 import {
-  ForbiddenError,
-  InvalidRequestError,
-  NotFoundError,
   jsonResponse,
   respondError,
+  InvalidRequestError,
+  ForbiddenError,
+  NotFoundError,
 } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
+import { preflight } from '../_shared/cors.ts';
+import { readSafetyFlags } from '../_shared/safety/feature-flags.ts';
+import { SafetyAlertActionRequestSchema } from '../../../packages/shared/src/schemas/safety.ts';
+import { assertPayloadSafe } from '../../../packages/shared/src/privacy/index.ts';
 
 const FN = 'safety-alert-dispatch';
 
-const DispatchRequestSchema = z
-  .object({ safety_alert_id: z.string().uuid() })
-  .strict();
-
-function moduleEnabled(): boolean {
-  return readSafetyFeatureFlag(
-    {
-      AGEKEY_SAFETY_SIGNALS_ENABLED: Deno.env.get(SAFETY_FEATURE_FLAGS.ENABLED),
-    },
-    SAFETY_FEATURE_FLAGS.ENABLED,
-  );
+function extractAlertId(url: URL): string | null {
+  const parts = url.pathname.split('/').filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const seg = parts[i] ?? '';
+    if (/^[0-9a-f-]{36}$/i.test(seg)) return seg;
+  }
+  return null;
 }
 
 serve(async (req) => {
+  const pre = preflight(req);
+  if (pre) return pre;
+
   const trace_id = newTraceId();
-  const fnCtx = { fn: FN, trace_id, origin: req.headers.get('origin') };
+  const origin = req.headers.get('origin');
+  const fnCtx = { fn: FN, trace_id, origin };
+
   if (req.method !== 'POST') {
     return respondError(fnCtx, new InvalidRequestError('Method not allowed'));
   }
-  if (!moduleEnabled()) {
-    return respondError(
-      fnCtx,
-      new ForbiddenError('Safety Signals module is disabled'),
-    );
-  }
 
   try {
-    const client = db();
-    const principal = await authenticateApiKey(client, req);
-    await setTenantContext(client, principal.tenantId);
+    const flags = readSafetyFlags();
+    if (!flags.enabled) throw new ForbiddenError('Safety Signals module disabled.');
+
+    const url = new URL(req.url);
+    const alertId = extractAlertId(url);
+    if (!alertId) throw new InvalidRequestError('Invalid alert id');
 
     let body: unknown;
     try {
@@ -64,46 +59,65 @@ serve(async (req) => {
     } catch {
       throw new InvalidRequestError('Invalid JSON body');
     }
-    const parsed = DispatchRequestSchema.safeParse(body);
+    assertPayloadSafe(body, 'admin_minimized_view');
+    const parsed = SafetyAlertActionRequestSchema.safeParse(body);
     if (!parsed.success) {
-      throw new InvalidRequestError(
-        'Invalid request body',
-        parsed.error.flatten(),
-      );
+      throw new InvalidRequestError('Invalid body', parsed.error.flatten());
     }
 
-    const alertRow = await client
+    const client = db();
+    const principal = await authenticateApiKey(client, req);
+    await setTenantContext(client, principal.tenantId);
+
+    const { data: alertRow, error } = await client
       .from('safety_alerts')
-      .select('id, tenant_id, status, metadata')
-      .eq('id', parsed.data.safety_alert_id)
+      .select('id, tenant_id, status')
+      .eq('id', alertId)
       .maybeSingle();
-    if (alertRow.error) throw alertRow.error;
-    if (!alertRow.data) throw new NotFoundError('Safety alert not found');
-    if (alertRow.data.tenant_id !== principal.tenantId) {
-      throw new ForbiddenError('Alert belongs to another tenant');
+    if (error) throw error;
+    if (!alertRow) throw new NotFoundError('alert not found');
+    if (alertRow.tenant_id !== principal.tenantId) {
+      throw new ForbiddenError('cross-tenant access denied');
     }
 
-    // Bump metadata.dispatched_at — the trigger fires only on status change
-    // so this insertion deliberately writes a fresh webhook delivery via
-    // an explicit insert + signature recompute. MVP keeps it simple by
-    // toggling status to itself with a metadata bump (the trigger picks up
-    // the metadata change as part of its IS DISTINCT FROM check on status,
-    // which is false here — so the redispatch path uses an explicit
-    // webhook_deliveries insert documented as P3 backlog instead).
-    log.warn('safety_alert_dispatch_stub', {
+    const newStatus = (() => {
+      switch (parsed.data.action) {
+        case 'acknowledge':
+          return 'acknowledged';
+        case 'escalate':
+          return 'escalated';
+        case 'resolve':
+          return 'resolved';
+        case 'dismiss':
+          return 'dismissed';
+      }
+    })();
+
+    const update: Record<string, unknown> = { status: newStatus };
+    if (parsed.data.note) update.resolved_note = parsed.data.note;
+    if (newStatus === 'resolved' || newStatus === 'dismissed') {
+      update.resolved_at = new Date().toISOString();
+    }
+
+    const { error: updErr } = await client
+      .from('safety_alerts')
+      .update(update)
+      .eq('id', alertId);
+    if (updErr) throw updErr;
+
+    log.info('safety_alert_status_changed', {
       fn: FN,
       trace_id,
-      safety_alert_id: alertRow.data.id,
-      note: 'MVP stub — explicit re-emission via direct insert lands in P3',
+      tenant_id: principal.tenantId,
+      alert_id: alertId,
+      action: parsed.data.action,
+      new_status: newStatus,
+      status: 200,
     });
 
     return jsonResponse(
-      {
-        ok: true,
-        safety_alert_id: alertRow.data.id,
-        note: 'Re-emission via direct webhook_deliveries insert is gated on the explicit webhooks-hardening round.',
-      },
-      { origin: fnCtx.origin },
+      { id: alertId, status: newStatus },
+      { origin },
     );
   } catch (err) {
     return respondError(fnCtx, err);

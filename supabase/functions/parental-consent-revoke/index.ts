@@ -1,73 +1,68 @@
-// POST /v1/parental-consent/:consent_token_id/revoke — revoke an active consent.
+// POST /v1/parental-consent/:parental_consent_id/revoke
 //
-// Auth: X-AgeKey-API-Key. Marks the parental_consents row revoked, marks the
-// parental_consent_tokens row revoked, inserts a parental_consent_revocations
-// audit row. The SQL trigger fires `parental_consent.revoked` webhook.
-//
-// Reference: docs/modules/parental-consent/api.md §POST /:consent_token_id/revoke
+// Auth: X-AgeKey-API-Key (tenant) OU guardian_panel_token (responsável).
+// Body: { reason }.
+// Ação: insere parental_consent_revocations (trigger dispara webhook),
+// marca parental_consents.revoked_at e parental_consent_tokens.revoked_at.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import {
-  ConsentRevokeRequestSchema,
-  ConsentRevokeResponseSchema,
-  CONSENT_FEATURE_FLAGS,
-  REASON_CODES,
-  assertPublicPayloadHasNoPii,
-  readConsentFeatureFlag,
-} from '../../../packages/shared/src/index.ts';
 import { authenticateApiKey } from '../_shared/auth.ts';
 import { db, setTenantContext } from '../_shared/db.ts';
 import {
-  ForbiddenError,
-  InvalidRequestError,
-  NotFoundError,
   jsonResponse,
   respondError,
+  InvalidRequestError,
+  InternalError,
+  ForbiddenError,
+  NotFoundError,
 } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
+import {
+  hashPanelToken,
+  constantTimeEqualString,
+} from '../_shared/parental-consent/panel-token.ts';
+import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import {
+  ParentalConsentRevokeRequestSchema,
+  type ParentalConsentRevokeResponse,
+} from '../../../packages/shared/src/schemas/parental-consent.ts';
+import { assertPayloadSafe } from '../../../packages/shared/src/privacy/index.ts';
 
 const FN = 'parental-consent-revoke';
 
-function moduleEnabled(): boolean {
-  return readConsentFeatureFlag(
-    {
-      AGEKEY_PARENTAL_CONSENT_ENABLED: Deno.env.get(
-        CONSENT_FEATURE_FLAGS.ENABLED,
-      ),
-    },
-    CONSENT_FEATURE_FLAGS.ENABLED,
-  );
+function extractParentalConsentId(url: URL): string | null {
+  const parts = url.pathname.split('/').filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const seg = parts[i] ?? '';
+    if (/^[0-9a-f-]{36}$/i.test(seg)) return seg;
+  }
+  return null;
 }
 
 serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
+
   const trace_id = newTraceId();
-  const fnCtx = { fn: FN, trace_id, origin: req.headers.get('origin') };
+  const origin = req.headers.get('origin');
+  const fnCtx = { fn: FN, trace_id, origin };
+
   if (req.method !== 'POST') {
     return respondError(fnCtx, new InvalidRequestError('Method not allowed'));
   }
-  if (!moduleEnabled()) {
-    return respondError(
-      fnCtx,
-      new ForbiddenError('Parental consent module is disabled'),
-    );
-  }
-
-  const url = new URL(req.url);
-  const consentTokenId = url.pathname.split('/').filter(Boolean).pop();
-  if (!consentTokenId || !/^[0-9a-f-]{36}$/.test(consentTokenId)) {
-    return respondError(
-      fnCtx,
-      new InvalidRequestError('Invalid consent_token_id in path'),
-    );
-  }
 
   try {
-    const client = db();
-    const principal = await authenticateApiKey(client, req);
-    await setTenantContext(client, principal.tenantId);
+    const flags = readParentalConsentFlags();
+    if (!flags.enabled) {
+      throw new ForbiddenError('AgeKey Consent module is disabled.');
+    }
+
+    const url = new URL(req.url);
+    const consentId = extractParentalConsentId(url);
+    if (!consentId) {
+      throw new InvalidRequestError('Invalid parental_consent_id');
+    }
 
     let body: unknown;
     try {
@@ -75,90 +70,126 @@ serve(async (req) => {
     } catch {
       throw new InvalidRequestError('Invalid JSON body');
     }
-    const parsed = ConsentRevokeRequestSchema.safeParse(body);
+    const parsed = ParentalConsentRevokeRequestSchema.safeParse(body);
     if (!parsed.success) {
-      throw new InvalidRequestError(
-        'Invalid request body',
-        parsed.error.flatten(),
-      );
+      throw new InvalidRequestError('Invalid body', parsed.error.flatten());
     }
     const input = parsed.data;
-    // Privacy guard on the inbound reason_text — if a tenant smuggles PII
-    // into the free-text field we reject the request rather than persist it.
-    if (input.reason_text != null) {
-      try {
-        assertPublicPayloadHasNoPii({ reason_text: input.reason_text });
-      } catch {
-        throw new InvalidRequestError(
-          'reason_text contains forbidden PII keys',
-        );
+
+    const client = db();
+    const apiKey = req.headers.get('x-agekey-api-key');
+    const panelToken = url.searchParams.get('token');
+
+    let source: 'tenant_admin' | 'guardian' = 'guardian';
+    let tenantId: string | null = null;
+    if (apiKey) {
+      const principal = await authenticateApiKey(client, req);
+      tenantId = principal.tenantId;
+      source = 'tenant_admin';
+      await setTenantContext(client, principal.tenantId);
+    } else if (!panelToken) {
+      throw new ForbiddenError(
+        'Either X-AgeKey-API-Key or ?token=<guardian_panel_token> is required',
+      );
+    }
+
+    // Carrega consent.
+    const { data: pc, error: pcErr } = await client
+      .from('parental_consents')
+      .select(
+        'id, tenant_id, application_id, consent_request_id, revoked_at',
+      )
+      .eq('id', consentId)
+      .maybeSingle();
+    if (pcErr || !pc) throw new NotFoundError('parental_consent not found');
+    if (pc.revoked_at) {
+      throw new InvalidRequestError('parental_consent already revoked');
+    }
+    if (tenantId && pc.tenant_id !== tenantId) {
+      throw new ForbiddenError('cross-tenant access denied');
+    }
+
+    // Se panel token, valida via consent_request.
+    if (panelToken) {
+      const expectedHash = await hashPanelToken(panelToken);
+      const { data: reqRow } = await client
+        .from('parental_consent_requests')
+        .select('guardian_panel_token_hash')
+        .eq('id', pc.consent_request_id)
+        .single();
+      if (
+        !reqRow ||
+        !constantTimeEqualString(
+          expectedHash,
+          reqRow.guardian_panel_token_hash as string,
+        )
+      ) {
+        throw new ForbiddenError('Invalid guardian_panel_token');
       }
     }
 
-    const tokenRow = await client
+    // Carrega JTI ativo (se houver).
+    const { data: tokenRow } = await client
       .from('parental_consent_tokens')
-      .select('jti, tenant_id, parental_consent_id, status, audience')
-      .eq('jti', consentTokenId)
+      .select('jti, revoked_at')
+      .eq('parental_consent_id', pc.id)
       .maybeSingle();
-    if (tokenRow.error) throw tokenRow.error;
-    if (!tokenRow.data) throw new NotFoundError('Consent token not found');
-    if (tokenRow.data.tenant_id !== principal.tenantId) {
-      throw new ForbiddenError('Token belongs to another tenant');
-    }
 
-    const now = new Date().toISOString();
-    if (tokenRow.data.status !== 'revoked') {
-      const u1 = await client
-        .from('parental_consent_tokens')
-        .update({ status: 'revoked', revoked_at: now })
-        .eq('jti', tokenRow.data.jti);
-      if (u1.error) throw u1.error;
-    }
+    const revokedAt = new Date().toISOString();
 
-    const u2 = await client
+    // Append revocation row (trigger gera webhook).
+    const { error: revInsErr } = await client
+      .from('parental_consent_revocations')
+      .insert({
+        tenant_id: pc.tenant_id,
+        parental_consent_id: pc.id,
+        jti: tokenRow?.jti ?? '00000000-0000-0000-0000-000000000000',
+        source,
+        reason: input.reason,
+      });
+    if (revInsErr) throw revInsErr;
+
+    // Atualiza parental_consents.revoked_at (permitido pelo trigger).
+    await client
       .from('parental_consents')
+      .update({ revoked_at: revokedAt })
+      .eq('id', pc.id);
+
+    // Atualiza parental_consent_tokens.revoked_at (se token existe).
+    if (tokenRow?.jti) {
+      await client
+        .from('parental_consent_tokens')
+        .update({ revoked_at: revokedAt, revoked_reason: input.reason })
+        .eq('jti', tokenRow.jti);
+    }
+
+    // Marca request como revoked.
+    await client
+      .from('parental_consent_requests')
       .update({
         status: 'revoked',
-        revoked_at: now,
-        revocation_reason: input.reason_code ?? REASON_CODES.CONSENT_REVOKED,
+        decided_at: revokedAt,
+        reason_code: 'CONSENT_REVOKED',
       })
-      .eq('id', tokenRow.data.parental_consent_id)
-      .neq('status', 'revoked');
-    if (u2.error) throw u2.error;
+      .eq('id', pc.consent_request_id);
 
-    const ins = await client.from('parental_consent_revocations').insert({
-      tenant_id: principal.tenantId,
-      parental_consent_id: tokenRow.data.parental_consent_id,
-      consent_token_id: tokenRow.data.jti,
-      actor_type: input.actor_type,
-      reason_code: input.reason_code ?? REASON_CODES.CONSENT_REVOKED,
-      reason_text: input.reason_text ?? null,
-      effective_at: now,
-    });
-    if (ins.error) throw ins.error;
-
-    const responseBody = {
-      parental_consent_id: tokenRow.data.parental_consent_id,
-      consent_token_id: tokenRow.data.jti,
-      status: 'revoked' as const,
-      reason_code: input.reason_code ?? REASON_CODES.CONSENT_REVOKED,
-      revoked_at: now,
-      pii_included: false as const,
-      content_included: false as const,
+    const response: ParentalConsentRevokeResponse = {
+      parental_consent_id: pc.id as string,
+      revoked_at: revokedAt,
+      reason_code: 'CONSENT_REVOKED',
     };
-    assertPublicPayloadHasNoPii(responseBody);
-    const validated = ConsentRevokeResponseSchema.parse(responseBody);
+    assertPayloadSafe(response, 'public_api_response');
 
     log.info('parental_consent_revoked', {
       fn: FN,
       trace_id,
-      tenant_id: principal.tenantId,
-      consent_token_id: tokenRow.data.jti,
-      reason_code: validated.reason_code,
+      tenant_id: pc.tenant_id,
+      parental_consent_id: pc.id,
+      source,
       status: 200,
     });
 
-    return jsonResponse(validated, { origin: fnCtx.origin });
+    return jsonResponse(response, { origin });
   } catch (err) {
     return respondError(fnCtx, err);
   }

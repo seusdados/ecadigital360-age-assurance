@@ -1,76 +1,55 @@
-// POST /v1/safety/step-up — request a step-up age verification for a subject.
+// POST /v1/safety/step-up
 //
-// Auth: X-AgeKey-API-Key. Creates a verification_session bound to the
-// safety alert that triggered the step-up, returning a redirect URL the
-// client app can hand to the user. Does NOT create a parallel KYC flow —
-// it routes through the canonical Core verification.
-//
-// Reference: docs/modules/safety-signals/EDGE_FUNCTIONS.md §step-up
+// Wrapper público: cria verification_session no Core associada a um
+// safety_alert. Usado quando o tenant prefere dirigir o flow de step-up
+// pelo seu lado em vez de aceitar o session_id automaticamente criado
+// pelo ingest.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import { z } from 'zod';
-import {
-  CONSENT_FEATURE_FLAGS,
-  SAFETY_FEATURE_FLAGS,
-  REASON_CODES,
-  assertPublicPayloadHasNoPii,
-  readSafetyFeatureFlag,
-  readConsentFeatureFlag,
-} from '../../../packages/shared/src/index.ts';
 import { authenticateApiKey } from '../_shared/auth.ts';
 import { db, setTenantContext } from '../_shared/db.ts';
 import {
-  ForbiddenError,
-  InvalidRequestError,
-  NotFoundError,
   jsonResponse,
   respondError,
+  InvalidRequestError,
+  ForbiddenError,
+  NotFoundError,
 } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
-import { resolvePolicy } from '../_shared/policy-engine.ts';
-import { newNonce } from '../_shared/sessions.ts';
+import { readSafetyFlags } from '../_shared/safety/feature-flags.ts';
+import { createStepUpSession } from '../_shared/safety/step-up.ts';
+import { z } from 'https://esm.sh/zod@3.23.8';
+import { assertPayloadSafe } from '../../../packages/shared/src/privacy/index.ts';
 
 const FN = 'safety-step-up';
 
-const StepUpRequestSchema = z
+const RequestSchema = z
   .object({
     safety_alert_id: z.string().uuid(),
-    /** Policy slug to use for the step-up; defaults to the tenant's
-     *  default age-verify policy. */
-    policy_slug: z.string().min(1).max(64).optional(),
+    policy_slug: z.string().min(1).max(64),
+    locale: z
+      .string()
+      .regex(/^[a-z]{2}(-[A-Z]{2})?$/)
+      .default('pt-BR'),
   })
   .strict();
-
-function moduleEnabled(): boolean {
-  return readSafetyFeatureFlag(
-    {
-      AGEKEY_SAFETY_SIGNALS_ENABLED: Deno.env.get(SAFETY_FEATURE_FLAGS.ENABLED),
-    },
-    SAFETY_FEATURE_FLAGS.ENABLED,
-  );
-}
 
 serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
+
   const trace_id = newTraceId();
-  const fnCtx = { fn: FN, trace_id, origin: req.headers.get('origin') };
+  const origin = req.headers.get('origin');
+  const fnCtx = { fn: FN, trace_id, origin };
 
   if (req.method !== 'POST') {
     return respondError(fnCtx, new InvalidRequestError('Method not allowed'));
   }
-  if (!moduleEnabled()) {
-    return respondError(
-      fnCtx,
-      new ForbiddenError('Safety Signals module is disabled'),
-    );
-  }
 
   try {
-    const client = db();
-    const principal = await authenticateApiKey(client, req);
-    await setTenantContext(client, principal.tenantId);
+    const flags = readSafetyFlags();
+    if (!flags.enabled) throw new ForbiddenError('Safety Signals module disabled.');
 
     let body: unknown;
     try {
@@ -78,105 +57,78 @@ serve(async (req) => {
     } catch {
       throw new InvalidRequestError('Invalid JSON body');
     }
-    const parsed = StepUpRequestSchema.safeParse(body);
+    const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) {
-      throw new InvalidRequestError(
-        'Invalid request body',
-        parsed.error.flatten(),
-      );
+      throw new InvalidRequestError('Invalid body', parsed.error.flatten());
     }
     const input = parsed.data;
 
-    const alertRow = await client
+    const client = db();
+    const principal = await authenticateApiKey(client, req);
+    await setTenantContext(client, principal.tenantId);
+
+    const { data: alertRow } = await client
       .from('safety_alerts')
-      .select('id, tenant_id, application_id, status')
+      .select('id, tenant_id, application_id, counterparty_subject_id, actor_subject_id')
       .eq('id', input.safety_alert_id)
       .maybeSingle();
-    if (alertRow.error) throw alertRow.error;
-    if (!alertRow.data) throw new NotFoundError('Safety alert not found');
-    if (alertRow.data.tenant_id !== principal.tenantId) {
-      throw new ForbiddenError('Alert belongs to another tenant');
+    if (!alertRow) throw new NotFoundError('alert not found');
+    if (alertRow.tenant_id !== principal.tenantId) {
+      throw new ForbiddenError('cross-tenant access denied');
     }
 
-    const policySlug = input.policy_slug ?? 'default';
-    const { snapshot: policy, policy_version_id } = await resolvePolicy(
-      client,
-      principal.tenantId,
-      policySlug,
-    );
-
-    const sessionInsert = await client
-      .from('verification_sessions')
-      .insert({
-        tenant_id: principal.tenantId,
-        application_id: principal.applicationId,
-        policy_id: policy.id,
-        policy_version_id,
-        status: 'pending',
-        external_user_ref: null,
-        locale: 'pt-BR',
-        client_capabilities_json: {},
-      })
-      .select('id, expires_at')
+    const { data: policyRow } = await client
+      .from('policies')
+      .select('id, current_version')
+      .eq('tenant_id', principal.tenantId)
+      .eq('slug', input.policy_slug)
+      .maybeSingle();
+    if (!policyRow) throw new NotFoundError('policy not found');
+    const { data: versionRow } = await client
+      .from('policy_versions')
+      .select('id')
+      .eq('policy_id', (policyRow as { id: string }).id)
+      .eq('version', (policyRow as { current_version: number }).current_version)
       .single();
-    if (sessionInsert.error) throw sessionInsert.error;
-    const sessionId = sessionInsert.data.id as string;
+    if (!versionRow) throw new NotFoundError('policy_version not found');
 
-    await client.from('verification_challenges').insert({
-      session_id: sessionId,
-      nonce: newNonce(),
+    const externalUserRef =
+      (alertRow as { counterparty_subject_id: string | null }).counterparty_subject_id ??
+      (alertRow as { actor_subject_id: string }).actor_subject_id;
+
+    const stepUp = await createStepUpSession(client, {
+      tenantId: principal.tenantId,
+      applicationId: principal.applicationId,
+      policyId: (policyRow as { id: string }).id,
+      policyVersionId: (versionRow as { id: string }).id,
+      externalUserRef,
+      locale: input.locale,
     });
 
-    // Optional consent feature interlock — record audit only when both
-    // modules are enabled and the alert risk category warrants parental
-    // consent (e.g. unknown_to_minor_contact).
-    const consentEnabled = readConsentFeatureFlag(
-      {
-        AGEKEY_PARENTAL_CONSENT_ENABLED: Deno.env.get(
-          CONSENT_FEATURE_FLAGS.ENABLED,
-        ),
-      },
-      CONSENT_FEATURE_FLAGS.ENABLED,
-    );
+    await client
+      .from('safety_alerts')
+      .update({ step_up_session_id: stepUp.session_id })
+      .eq('id', input.safety_alert_id);
 
-    await client.from('audit_events').insert({
-      tenant_id: principal.tenantId,
-      actor_type: 'system',
-      action: 'safety.step_up_required',
-      resource_type: 'safety_signal',
-      resource_id: alertRow.data.id,
-      diff_json: {
-        decision_domain: 'safety_signal',
-        envelope_version: 1,
-        safety_alert_id: alertRow.data.id,
-        verification_session_id: sessionId,
-        consent_module_enabled: consentEnabled,
-        reason_code: REASON_CODES.SAFETY_STEP_UP_REQUIRED,
-        content_included: false,
-        pii_included: false,
-      },
-    });
-
-    const responseBody = {
-      safety_alert_id: alertRow.data.id,
-      verification_session_id: sessionId,
-      reason_code: REASON_CODES.SAFETY_STEP_UP_REQUIRED,
-      expires_at: new Date(sessionInsert.data.expires_at).toISOString(),
-      pii_included: false as const,
+    const response = {
+      safety_alert_id: input.safety_alert_id,
+      step_up_session_id: stepUp.session_id,
+      step_up_expires_at: stepUp.expires_at,
       content_included: false as const,
+      pii_included: false as const,
     };
-    assertPublicPayloadHasNoPii(responseBody);
+    assertPayloadSafe(response, 'public_api_response');
 
     log.info('safety_step_up_created', {
       fn: FN,
       trace_id,
       tenant_id: principal.tenantId,
-      safety_alert_id: alertRow.data.id,
-      verification_session_id: sessionId,
+      alert_id: input.safety_alert_id,
+      session_id: stepUp.session_id,
       status: 200,
     });
 
-    return jsonResponse(responseBody, { origin: fnCtx.origin });
+    return jsonResponse(response, { origin });
   } catch (err) {
     return respondError(fnCtx, err);
   }

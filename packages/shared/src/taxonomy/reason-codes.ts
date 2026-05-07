@@ -1,87 +1,134 @@
-// Canonical reason-code taxonomy entrypoint for the AgeKey Core.
+// Catálogo canônico de Reason Codes do AgeKey.
 //
-// Re-exports the runtime catalog defined in `../reason-codes.ts` (which is the
-// single source of truth shared by SQL, edge functions and SDK) and adds a
-// reserved namespace for the Consent and Safety modules. Reserved codes
-// declare *which* identifiers the Core promises to honour once those modules
-// land; they are intentionally NOT yet referenced by the policy engine.
+// Estende e re-exporta o catálogo legado em `packages/shared/src/reason-codes.ts`
+// (THRESHOLD_SATISFIED, ZKP_*, VC_*, GATEWAY_*, FALLBACK_*, SESSION_*, etc.).
 //
-// Reference: docs/specs/agekey-core-canonical-contracts.md §Reason codes.
+// Adiciona grupos canônicos exigidos pela arquitetura modular:
+// AGE_*, CONSENT_*, SAFETY_*, POLICY_*, GATEWAY_*, CREDENTIAL_*,
+// PRIVACY_*, TOKEN_*, WEBHOOK_*, RETENTION_*, SYSTEM_*, ZKP_*.
+//
+// Regra: nunca acusar crime. Nunca declarar fato jurídico definitivo.
+// Usar sinais, políticas, elegibilidade e necessidade de revisão.
+//
+// Documentação: docs/specs/agekey-reason-codes.md
 
-export {
-  REASON_CODES,
-  POSITIVE_REASON_CODES,
-  isPositive,
-  type ReasonCode,
-} from '../reason-codes.ts';
+import { REASON_CODES as LEGACY_REASON_CODES } from '../reason-codes.ts';
 
-import { REASON_CODES, type ReasonCode } from '../reason-codes.ts';
+export const CANONICAL_REASON_CODES = {
+  // ====================== AGE_* ======================
+  AGE_POLICY_SATISFIED: 'AGE_POLICY_SATISFIED',
+  AGE_POLICY_NOT_SATISFIED: 'AGE_POLICY_NOT_SATISFIED',
+  AGE_UNKNOWN_REQUIRES_STEP_UP: 'AGE_UNKNOWN_REQUIRES_STEP_UP',
+  AGE_METHOD_UNAVAILABLE: 'AGE_METHOD_UNAVAILABLE',
+  AGE_PREDICATE_INSUFFICIENT: 'AGE_PREDICATE_INSUFFICIENT',
+  AGE_BAND_OUT_OF_RANGE: 'AGE_BAND_OUT_OF_RANGE',
 
-/**
- * Reason-code categories. Used by Admin UI filters and by the audit pipeline
- * to bucket events without leaking the enum's wire spelling.
- */
-export const REASON_CODE_CATEGORIES = {
-  positive: 'positive',
-  zkp: 'zkp',
-  vc: 'vc',
-  gateway: 'gateway',
-  fallback: 'fallback',
-  policy: 'policy',
-  session: 'session',
-  request: 'request',
-  internal: 'internal',
-  consent: 'consent',
-  safety: 'safety',
+  // ====================== CONSENT_* ======================
+  CONSENT_REQUIRED: 'CONSENT_REQUIRED',
+  CONSENT_APPROVED: 'CONSENT_APPROVED',
+  CONSENT_DENIED: 'CONSENT_DENIED',
+  CONSENT_PENDING_GUARDIAN: 'CONSENT_PENDING_GUARDIAN',
+  CONSENT_PENDING_VERIFICATION: 'CONSENT_PENDING_VERIFICATION',
+  CONSENT_EXPIRED: 'CONSENT_EXPIRED',
+  CONSENT_REVOKED: 'CONSENT_REVOKED',
+  CONSENT_TEXT_VERSION_REQUIRED: 'CONSENT_TEXT_VERSION_REQUIRED',
+  CONSENT_POLICY_BLOCKED: 'CONSENT_POLICY_BLOCKED',
+  CONSENT_GUARDIAN_NOT_VERIFIED: 'CONSENT_GUARDIAN_NOT_VERIFIED',
+  CONSENT_PURPOSE_MISMATCH: 'CONSENT_PURPOSE_MISMATCH',
+
+  // ====================== SAFETY_* ======================
+  SAFETY_NO_RISK_SIGNAL: 'SAFETY_NO_RISK_SIGNAL',
+  SAFETY_UNKNOWN_TO_MINOR_PRIVATE_MESSAGE:
+    'SAFETY_UNKNOWN_TO_MINOR_PRIVATE_MESSAGE',
+  SAFETY_ADULT_MINOR_HIGH_FREQUENCY_24H: 'SAFETY_ADULT_MINOR_HIGH_FREQUENCY_24H',
+  SAFETY_MEDIA_UPLOAD_TO_MINOR: 'SAFETY_MEDIA_UPLOAD_TO_MINOR',
+  SAFETY_EXTERNAL_LINK_TO_MINOR: 'SAFETY_EXTERNAL_LINK_TO_MINOR',
+  SAFETY_MULTIPLE_REPORTS_AGAINST_ACTOR: 'SAFETY_MULTIPLE_REPORTS_AGAINST_ACTOR',
+  SAFETY_POLICY_REQUIRES_HUMAN_REVIEW: 'SAFETY_POLICY_REQUIRES_HUMAN_REVIEW',
+  SAFETY_STEP_UP_REQUIRED: 'SAFETY_STEP_UP_REQUIRED',
+  SAFETY_PARENTAL_CONSENT_CHECK_REQUIRED:
+    'SAFETY_PARENTAL_CONSENT_CHECK_REQUIRED',
+  SAFETY_ALERT_ACKNOWLEDGED: 'SAFETY_ALERT_ACKNOWLEDGED',
+  SAFETY_ALERT_ESCALATED: 'SAFETY_ALERT_ESCALATED',
+
+  // ====================== POLICY_* ======================
+  POLICY_NOT_FOUND: 'POLICY_NOT_FOUND',
+  POLICY_RETIRED: 'POLICY_RETIRED',
+  POLICY_BLOCKED_RESOURCE: 'POLICY_BLOCKED_RESOURCE',
+  POLICY_VERSION_MISMATCH: 'POLICY_VERSION_MISMATCH',
+  POLICY_DOMAIN_NOT_SUPPORTED: 'POLICY_DOMAIN_NOT_SUPPORTED',
+
+  // ====================== GATEWAY_* ======================
+  GATEWAY_PROVIDER_NOT_CONFIGURED: 'GATEWAY_PROVIDER_NOT_CONFIGURED',
+  GATEWAY_PROVIDER_UNSUPPORTED: 'GATEWAY_PROVIDER_UNSUPPORTED',
+  GATEWAY_ATTESTATION_INVALID: 'GATEWAY_ATTESTATION_INVALID',
+
+  // ====================== CREDENTIAL_* ======================
+  CREDENTIAL_FEATURE_DISABLED: 'CREDENTIAL_FEATURE_DISABLED',
+  CREDENTIAL_TEST_VECTORS_REQUIRED: 'CREDENTIAL_TEST_VECTORS_REQUIRED',
+  CREDENTIAL_ISSUER_UNTRUSTED: 'CREDENTIAL_ISSUER_UNTRUSTED',
+  CREDENTIAL_FORMAT_UNSUPPORTED: 'CREDENTIAL_FORMAT_UNSUPPORTED',
+
+  // ====================== ZKP_* ======================
+  ZKP_FEATURE_DISABLED: 'ZKP_FEATURE_DISABLED',
+  ZKP_LIBRARY_NOT_AVAILABLE: 'ZKP_LIBRARY_NOT_AVAILABLE',
+
+  // ====================== PRIVACY_* ======================
+  PRIVACY_FORBIDDEN_CLAIM: 'PRIVACY_FORBIDDEN_CLAIM',
+  PRIVACY_CONTENT_NOT_ALLOWED_IN_V1: 'PRIVACY_CONTENT_NOT_ALLOWED_IN_V1',
+  PRIVACY_PII_BLOCKED: 'PRIVACY_PII_BLOCKED',
+
+  // ====================== TOKEN_* ======================
+  TOKEN_INVALID: 'TOKEN_INVALID',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  TOKEN_REVOKED: 'TOKEN_REVOKED',
+  TOKEN_AUDIENCE_MISMATCH: 'TOKEN_AUDIENCE_MISMATCH',
+  TOKEN_RESOURCE_MISMATCH: 'TOKEN_RESOURCE_MISMATCH',
+
+  // ====================== WEBHOOK_* ======================
+  WEBHOOK_SIGNATURE_INVALID: 'WEBHOOK_SIGNATURE_INVALID',
+  WEBHOOK_REPLAY_DETECTED: 'WEBHOOK_REPLAY_DETECTED',
+  WEBHOOK_TIMESTAMP_OUT_OF_WINDOW: 'WEBHOOK_TIMESTAMP_OUT_OF_WINDOW',
+  WEBHOOK_DELIVERY_FAILED: 'WEBHOOK_DELIVERY_FAILED',
+
+  // ====================== RETENTION_* ======================
+  RETENTION_CLASS_UNKNOWN: 'RETENTION_CLASS_UNKNOWN',
+  RETENTION_LEGAL_HOLD_ACTIVE: 'RETENTION_LEGAL_HOLD_ACTIVE',
+  RETENTION_CLEANUP_FAILED: 'RETENTION_CLEANUP_FAILED',
+
+  // ====================== SYSTEM_* ======================
+  SYSTEM_INTERNAL_ERROR: 'SYSTEM_INTERNAL_ERROR',
+  SYSTEM_RATE_LIMITED: 'SYSTEM_RATE_LIMITED',
+  SYSTEM_INVALID_REQUEST: 'SYSTEM_INVALID_REQUEST',
 } as const;
 
-export type ReasonCodeCategory =
-  (typeof REASON_CODE_CATEGORIES)[keyof typeof REASON_CODE_CATEGORIES];
+export type CanonicalReasonCode =
+  (typeof CANONICAL_REASON_CODES)[keyof typeof CANONICAL_REASON_CODES];
 
-export function categorizeReasonCode(code: string): ReasonCodeCategory {
-  if (code.startsWith('ZKP_')) return REASON_CODE_CATEGORIES.zkp;
-  if (code.startsWith('VC_')) return REASON_CODE_CATEGORIES.vc;
-  if (code.startsWith('GATEWAY_')) return REASON_CODE_CATEGORIES.gateway;
-  if (code.startsWith('FALLBACK_')) return REASON_CODE_CATEGORIES.fallback;
-  if (code.startsWith('POLICY_')) return REASON_CODE_CATEGORIES.policy;
-  if (code.startsWith('SESSION_')) return REASON_CODE_CATEGORIES.session;
-  if (code.startsWith('CONSENT_')) return REASON_CODE_CATEGORIES.consent;
-  if (code.startsWith('SAFETY_')) return REASON_CODE_CATEGORIES.safety;
-  if (
-    code === REASON_CODES.THRESHOLD_SATISFIED ||
-    code === REASON_CODES.BAND_SATISFIED
-  ) {
-    return REASON_CODE_CATEGORIES.positive;
-  }
-  if (
-    code === REASON_CODES.RATE_LIMIT_EXCEEDED ||
-    code === REASON_CODES.INVALID_REQUEST ||
-    code === REASON_CODES.EXTERNAL_USER_REF_PII_DETECTED
-  ) {
-    return REASON_CODE_CATEGORIES.request;
-  }
-  return REASON_CODE_CATEGORIES.internal;
-}
+/** União do catálogo legado + canônico. */
+export type AgeKeyReasonCode =
+  | (typeof LEGACY_REASON_CODES)[keyof typeof LEGACY_REASON_CODES]
+  | CanonicalReasonCode;
+
+/** Re-export do catálogo legado para conveniência. */
+export { LEGACY_REASON_CODES };
 
 /**
- * Reserved codes for future modules. Empty after Round 4 promoted both the
- * Consent and Safety code namespaces to LIVE in `../reason-codes.ts`. Kept
- * as a structural hook so future modules can declare reserved codes without
- * adjusting the index file.
+ * Vocabulário proibido em descrições de reason codes — não acusar crime,
+ * não declarar fato jurídico definitivo. Esta lista é varrida em testes.
  */
-export const RESERVED_REASON_CODES = {} as const;
-
-export type ReservedReasonCode =
-  (typeof RESERVED_REASON_CODES)[keyof typeof RESERVED_REASON_CODES];
-
-/** Returns true if the code is part of the live (Core-emitted) catalog. */
-export function isLiveReasonCode(code: string): code is ReasonCode {
-  return Object.values(REASON_CODES).includes(code as ReasonCode);
-}
-
-/** Returns true if the code is in the reserved Consent/Safety namespace. */
-export function isReservedReasonCode(code: string): code is ReservedReasonCode {
-  return Object.values(RESERVED_REASON_CODES).includes(
-    code as ReservedReasonCode,
-  );
-}
+export const FORBIDDEN_REASON_CODE_TERMS = [
+  'crime',
+  'criminoso',
+  'criminal',
+  'predador',
+  'pedofilo',
+  'pedophile',
+  'abuso_comprovado',
+  'proven_abuse',
+  'identidade_real',
+  'real_identity',
+  'civil_id_proven',
+  'kyc_completed',
+  'face_match_confirmed',
+] as const;

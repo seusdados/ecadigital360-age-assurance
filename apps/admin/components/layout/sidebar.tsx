@@ -7,15 +7,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity,
-  AlertTriangle,
   AppWindow,
   CreditCard,
   FileText,
   Gauge,
   Settings,
+  Shield,
   ShieldCheck,
   Stamp,
-  UsersRound,
+  UserCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -33,8 +33,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Visão geral', icon: Gauge },
   { href: '/verifications', label: 'Verificações', icon: ShieldCheck },
-  { href: '/consent', label: 'Consentimento parental', icon: UsersRound },
-  { href: '/safety', label: 'Sinais de risco', icon: AlertTriangle },
+  { href: '/consents', label: 'Consentimentos', icon: UserCheck },
+  { href: '/safety', label: 'Safety Signals', icon: Shield },
   { href: '/applications', label: 'Aplicações', icon: AppWindow },
   { href: '/policies', label: 'Políticas', icon: FileText },
   { href: '/issuers', label: 'Emissores', icon: Stamp },

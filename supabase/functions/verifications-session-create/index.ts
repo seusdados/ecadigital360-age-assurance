@@ -10,17 +10,13 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authenticateApiKey } from '../_shared/auth.ts';
 import { db, setTenantContext } from '../_shared/db.ts';
 import { jsonResponse, respondError } from '../_shared/errors.ts';
-import { ExternalUserRefPiiError, InvalidRequestError } from '../_shared/errors.ts';
+import { InvalidRequestError } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rate-limit.ts';
 import { resolvePolicy, selectAvailableMethods } from '../_shared/policy-engine.ts';
 import { newNonce } from '../_shared/sessions.ts';
 import { SessionCreateRequestSchema } from '../../../packages/shared/src/schemas/sessions.ts';
-import {
-  detectPiiInRef,
-  explainPiiRejection,
-} from '../../../packages/shared/src/external-user-ref.ts';
 
 const FN = 'verifications-session-create';
 
@@ -50,29 +46,6 @@ serve(async (req) => {
     } catch {
       throw new InvalidRequestError('Invalid JSON body');
     }
-
-    // Boundary check: reject obvious PII in `external_user_ref` before
-    // even parsing the rest of the body, so the rejection carries the
-    // dedicated reason_code (EXTERNAL_USER_REF_PII_DETECTED) rather than
-    // the generic INVALID_REQUEST. The Zod schema also enforces this
-    // (defense in depth) but the Zod path collapses to INVALID_REQUEST.
-    if (
-      typeof body === 'object' &&
-      body !== null &&
-      'external_user_ref' in body &&
-      (body as { external_user_ref?: unknown }).external_user_ref !== undefined
-    ) {
-      const detection = detectPiiInRef(
-        (body as { external_user_ref?: unknown }).external_user_ref,
-      );
-      if (!detection.ok) {
-        throw new ExternalUserRefPiiError(explainPiiRejection(detection), {
-          field: 'external_user_ref',
-          detection_code: detection.code,
-        });
-      }
-    }
-
     const parsed = SessionCreateRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new InvalidRequestError('Invalid request body', parsed.error.flatten());

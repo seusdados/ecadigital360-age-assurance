@@ -1,151 +1,187 @@
-// Retention classes — canonical mapping from data category to maximum
-// retention window. The Core, the retention-job edge function and the
-// upcoming Consent/Safety modules all read from this single table so the
-// privacy policy and the database stay in lockstep.
+// Classes canônicas de retenção do AgeKey.
 //
-// `max_seconds = null` means "no fixed cap, governed by tenant retention" or
-// "permanent (hash-only)". The retention job interprets `null` as "no
-// dedicated TTL — fall back to per-tenant `tenants.retention_days`".
+// Padroniza nomes que aparecem em policies, retention-job, audit_events,
+// data_retention_policy e admin labels. Usadas por Core, Consent e
+// Safety Signals para determinar TTL e regras de cleanup.
 //
-// Reference: docs/specs/agekey-core-canonical-contracts.md §Retention.
-//            supabase/functions/retention-job/index.ts
-//            supabase/migrations/001_tenancy.sql (tenants.retention_days)
+// Documentação: docs/specs/agekey-retention-classes.md
 
-import { z } from 'zod';
+export type AgeKeyRetentionClass =
+  | 'no_store'
+  | 'session_24h'
+  | 'session_7d'
+  | 'otp_24h'
+  | 'otp_30d'
+  | 'event_30d'
+  | 'event_90d'
+  | 'event_180d'
+  | 'aggregate_12m'
+  | 'verification_result_policy_ttl'
+  | 'result_token_policy_ttl'
+  | 'consent_active_until_expiration'
+  | 'consent_expired_audit_window'
+  | 'alert_12m'
+  | 'case_24m'
+  | 'legal_hold';
 
-const SECONDS_PER_DAY = 24 * 60 * 60;
-const SECONDS_PER_YEAR = 365 * SECONDS_PER_DAY;
-
-/**
- * Retention class codes. The values are the wire spelling — they appear in
- * audit diffs and in the policy version snapshots, so they must remain
- * stable.
- */
-export const RETENTION_CLASS_CODES = {
-  EPHEMERAL: 'ephemeral',
-  SHORT_LIVED: 'short_lived',
-  STANDARD_AUDIT: 'standard_audit',
-  REGULATORY: 'regulatory',
-  PERMANENT_HASH: 'permanent_hash',
-} as const;
-
-export type RetentionClassCode =
-  (typeof RETENTION_CLASS_CODES)[keyof typeof RETENTION_CLASS_CODES];
-
-export interface RetentionClass {
-  readonly code: RetentionClassCode;
-  /** Hard cap on seconds. `null` defers to per-tenant configuration. */
-  readonly max_seconds: number | null;
-  readonly description_pt: string;
+export interface RetentionClassDefinition {
+  readonly id: AgeKeyRetentionClass;
+  readonly description: string;
+  /**
+   * TTL em segundos. `null` quando o TTL é dinâmico (decorre da policy
+   * ou da expiração do consentimento) ou quando não há expiração
+   * automática (`legal_hold`, `no_store`).
+   */
+  readonly default_ttl_seconds: number | null;
+  /**
+   * Indica se o cleanup automático é permitido. `false` em `legal_hold`.
+   */
+  readonly auto_cleanup_allowed: boolean;
+  /**
+   * Indica se essa classe pode aparecer em ingestão Safety v1.
+   * `false` em classes que carregariam conteúdo ou identidade civil.
+   */
+  readonly safety_v1_compatible: boolean;
 }
 
+const DAY = 24 * 60 * 60;
+const MONTH = 30 * DAY;
+const YEAR = 365 * DAY;
+
 export const RETENTION_CLASSES: Readonly<
-  Record<RetentionClassCode, RetentionClass>
+  Record<AgeKeyRetentionClass, RetentionClassDefinition>
 > = {
-  ephemeral: {
-    code: 'ephemeral',
-    max_seconds: 24 * 60 * 60, // 24h
-    description_pt:
-      'Dados de sessão (challenges, payloads de prova) que somem em até 24h.',
+  no_store: {
+    id: 'no_store',
+    description:
+      'Nenhuma persistência fora de processamento em memória. Não armazena.',
+    default_ttl_seconds: 0,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
   },
-  short_lived: {
-    code: 'short_lived',
-    max_seconds: 30 * SECONDS_PER_DAY,
-    description_pt:
-      'Artefatos derivados de prova (proof_artifacts) com utilidade de até 30 dias.',
+  session_24h: {
+    id: 'session_24h',
+    description: 'Sessão temporária (24h).',
+    default_ttl_seconds: DAY,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
   },
-  standard_audit: {
-    code: 'standard_audit',
-    max_seconds: 90 * SECONDS_PER_DAY,
-    description_pt:
-      'Eventos de auditoria e tokens emitidos. Default do tenant é 90 dias; pode subir até 365.',
+  session_7d: {
+    id: 'session_7d',
+    description: 'Sessão estendida (7 dias).',
+    default_ttl_seconds: 7 * DAY,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
   },
-  regulatory: {
-    code: 'regulatory',
-    max_seconds: 5 * SECONDS_PER_YEAR,
-    description_pt:
-      'Versões de policy, registros legais e (futuro) registros de consentimento. 5 anos.',
+  otp_24h: {
+    id: 'otp_24h',
+    description: 'OTP/link curto de verificação (24h).',
+    default_ttl_seconds: DAY,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: false,
   },
-  permanent_hash: {
-    code: 'permanent_hash',
-    max_seconds: null,
-    description_pt:
-      'Hashes irreversíveis (ex.: revogação por jti). Persistem indefinidamente porque não contêm PII.',
+  otp_30d: {
+    id: 'otp_30d',
+    description: 'OTP com janela ampliada para auditoria (30d).',
+    default_ttl_seconds: 30 * DAY,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: false,
+  },
+  event_30d: {
+    id: 'event_30d',
+    description: 'Evento Safety/audit minimizado (30d).',
+    default_ttl_seconds: 30 * DAY,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
+  },
+  event_90d: {
+    id: 'event_90d',
+    description: 'Evento Safety/audit minimizado (90d).',
+    default_ttl_seconds: 90 * DAY,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
+  },
+  event_180d: {
+    id: 'event_180d',
+    description: 'Evento Safety/audit minimizado (180d).',
+    default_ttl_seconds: 180 * DAY,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
+  },
+  aggregate_12m: {
+    id: 'aggregate_12m',
+    description:
+      'Contadores agregados (12 meses). Sobrevivem aos eventos individuais.',
+    default_ttl_seconds: 12 * MONTH,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
+  },
+  verification_result_policy_ttl: {
+    id: 'verification_result_policy_ttl',
+    description:
+      'TTL definido pela `policy_versions.token_ttl_seconds` da política aplicada.',
+    default_ttl_seconds: null,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: false,
+  },
+  result_token_policy_ttl: {
+    id: 'result_token_policy_ttl',
+    description:
+      'TTL do `result_token` igual à TTL declarada pela política aplicada.',
+    default_ttl_seconds: null,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: false,
+  },
+  consent_active_until_expiration: {
+    id: 'consent_active_until_expiration',
+    description:
+      'Consentimento ativo: vive até `expires_at`. Apagado/arquivado ao expirar (sob `consent_expired_audit_window`).',
+    default_ttl_seconds: null,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: false,
+  },
+  consent_expired_audit_window: {
+    id: 'consent_expired_audit_window',
+    description:
+      'Após expirar, registro de consentimento permanece em janela de auditoria (default 365d) e depois é apagado.',
+    default_ttl_seconds: YEAR,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: false,
+  },
+  alert_12m: {
+    id: 'alert_12m',
+    description: 'Alerta Safety com retenção de 12 meses.',
+    default_ttl_seconds: 12 * MONTH,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
+  },
+  case_24m: {
+    id: 'case_24m',
+    description: 'Caso/escalonamento Safety com retenção de 24 meses.',
+    default_ttl_seconds: 24 * MONTH,
+    auto_cleanup_allowed: true,
+    safety_v1_compatible: true,
+  },
+  legal_hold: {
+    id: 'legal_hold',
+    description:
+      'Legal hold: nunca é apagado automaticamente. Cleanup bloqueado por audit_event RETENTION_LEGAL_HOLD_ACTIVE.',
+    default_ttl_seconds: null,
+    auto_cleanup_allowed: false,
+    safety_v1_compatible: true,
   },
 };
 
-/**
- * Mapping from data category (the kind of row a table stores) to the
- * retention class that governs it. The retention-job edge function and the
- * Admin UI both read from this table.
- *
- * Round 3 (Parental Consent) and Round 4 (Safety Signals) promoted their
- * categories from RESERVED to LIVE. Plumbing them through the retention-job
- * edge function is tracked in `safety-signals/RETENTION.md` and
- * `parental-consent/data-model.md` (P3 backlog).
- */
-export const RETENTION_CATEGORIES = {
-  session_state: 'ephemeral',
-  challenge_nonce: 'ephemeral',
-  proof_artifact: 'short_lived',
-  result_token_index: 'standard_audit',
-  audit_event: 'standard_audit',
-  billing_event: 'standard_audit',
-  policy_version: 'regulatory',
-  webhook_delivery: 'standard_audit',
-  consent_receipt: 'regulatory',
-  consent_revocation: 'regulatory',
-  consent_text_version: 'regulatory',
-  guardian_verification: 'ephemeral',
-  safety_event: 'standard_audit',
-  safety_alert: 'standard_audit',
-  safety_aggregate: 'short_lived',
-  safety_risk_signal: 'short_lived',
-} as const;
-
-export type RetentionCategory = keyof typeof RETENTION_CATEGORIES;
-
-export const RetentionClassCodeSchema = z.enum([
-  RETENTION_CLASS_CODES.EPHEMERAL,
-  RETENTION_CLASS_CODES.SHORT_LIVED,
-  RETENTION_CLASS_CODES.STANDARD_AUDIT,
-  RETENTION_CLASS_CODES.REGULATORY,
-  RETENTION_CLASS_CODES.PERMANENT_HASH,
-]);
-
-export function getRetentionClassForCategory(
-  category: RetentionCategory,
-): RetentionClass {
-  const code = RETENTION_CATEGORIES[category];
-  return RETENTION_CLASSES[code];
+export function getRetentionClass(
+  id: AgeKeyRetentionClass,
+): RetentionClassDefinition {
+  return RETENTION_CLASSES[id];
 }
 
-/**
- * Resolve the effective retention window for a category, taking the per-tenant
- * cap into account. Returns the smaller of the class cap and the tenant cap;
- * `null` on the class side defers entirely to the tenant.
- */
-export function effectiveRetentionSeconds(
-  category: RetentionCategory,
-  tenantRetentionDays: number,
-): number {
-  if (
-    !Number.isInteger(tenantRetentionDays) ||
-    tenantRetentionDays <= 0
-  ) {
-    throw new RangeError('tenantRetentionDays must be a positive integer');
-  }
-  const tenantSeconds = tenantRetentionDays * SECONDS_PER_DAY;
-  const klass = getRetentionClassForCategory(category);
-  if (klass.max_seconds == null) return tenantSeconds;
-  return Math.min(klass.max_seconds, tenantSeconds);
+export function isAutoCleanupAllowed(id: AgeKeyRetentionClass): boolean {
+  return RETENTION_CLASSES[id].auto_cleanup_allowed;
 }
 
-/** Returns true when a category is reserved (not yet enforced).
- *  After Round 3 + 4 promoted both consent_* and safety_* to LIVE in
- *  RETENTION_CATEGORIES, this check returns false — kept as a structural
- *  hook for future modules.
- */
-export function isReservedRetentionCategory(_category: string): boolean {
-  return false;
+export function isSafetyV1Compatible(id: AgeKeyRetentionClass): boolean {
+  return RETENTION_CLASSES[id].safety_v1_compatible;
 }
