@@ -387,12 +387,6 @@ NEXT_PUBLIC_AGEKEY_ISSUER=https://agekey.com.br
 ## Compliance
 
 - **LGPD/GDPR:** o motor não recebe nem persiste PII (DOB, documento, nome). `external_user_ref` é uma referência opaca do cliente — recomenda-se usar UUIDs internos, jamais email/CPF.
-- **Privacy guard:** todas as respostas das Edge Functions passam por
-  `assertPublicPayloadHasNoPii()` (ver
-  `packages/shared/src/privacy-guard.ts` e
-  `docs/specs/sdk-public-contract.md`). Se um backend tentar emitir um
-  token cujos claims contenham qualquer chave da lista
-  `FORBIDDEN_PUBLIC_KEYS`, o signer falha em vez de retornar o token.
 - **CORS:** o domínio do front-end deve estar registrado em `AGEKEY_ALLOWED_ORIGINS` antes de produção.
 - **Tokens:** verifique sempre `jti` para idempotência e `exp` para expiração; revogue via `revokeToken` em logout.
 

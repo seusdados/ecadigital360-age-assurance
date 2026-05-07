@@ -1,170 +1,179 @@
-// Decision Envelope — canonical Core output (pre-token).
+// Decision Envelope canônico do AgeKey.
 //
-// The Decision Envelope is the deterministic, public-safe summary that the
-// Core verifier produces for every session, before any signing happens. It is
-// the contract between:
-//   1. The internal verifier-core (adapter outputs → policy decision)
-//   2. The token signer (envelope → ResultTokenClaims JWT)
-//   3. The webhook fan-out (envelope → event payload)
-//   4. The audit pipeline (envelope → verification_results row)
-//
-// Three guarantees:
-//   * No PII may live in the envelope (enforced by the privacy guard).
-//   * `envelope_version` lets the Consent and Safety modules append fields
-//     without breaking older consumers.
-//   * The envelope is the only object used to derive the JWT claims, so the
-//     two cannot drift.
-//
-// Reference: docs/specs/agekey-core-canonical-contracts.md §Decision envelope.
+// Contrato comum a Core/Verify, Consent, Safety Signals e (futuro) Pass.
+// Toda decisão pública atravessa este envelope. Não pode conter PII.
+// Não pode conter conteúdo bruto. Documentação: docs/specs/agekey-decision-envelope.md
 
 import { z } from 'zod';
-import {
-  AssuranceLevelSchema,
-  UuidSchema,
-  VerificationDecisionSchema,
-  VerificationMethodSchema,
-} from '../schemas/common.ts';
-import { AgeBandSchema, AgeThresholdSchema } from '../taxonomy/age-taxonomy.ts';
-import { assertPublicPayloadHasNoPii } from '../privacy-guard.ts';
-import type { ResultTokenClaims } from '../schemas/tokens.ts';
 
-/** Bumped whenever a non-additive change ships in the envelope. */
-export const DECISION_ENVELOPE_VERSION = 1;
+export type AgeKeyDecisionDomain =
+  | 'age_verify'
+  | 'parental_consent'
+  | 'safety_signal'
+  | 'credential'
+  | 'gateway'
+  | 'fallback';
 
-/**
- * Adapter evidence kept after minimisation. Free-form on purpose: every
- * adapter ships its own keys (e.g. `proof_kind`, `nonce_match`). The privacy
- * guard rejects PII keys regardless of where they sit.
- */
-export const DecisionAdapterEvidenceSchema = z
-  .object({
-    format: z.string().max(64).optional(),
-    issuer_did: z.string().max(512).optional(),
-    nonce_match: z.boolean().optional(),
-    proof_kind: z.string().max(64).optional(),
-    extra: z
-      .record(z.union([z.string(), z.number(), z.boolean()]))
-      .optional(),
-  })
-  .strict();
+export type AgeKeyDecisionStatus =
+  | 'approved'
+  | 'denied'
+  | 'pending'
+  | 'pending_guardian'
+  | 'pending_verification'
+  | 'needs_review'
+  | 'expired'
+  | 'revoked'
+  | 'blocked_by_policy'
+  | 'step_up_required'
+  | 'rate_limited'
+  | 'soft_blocked'
+  | 'hard_blocked'
+  | 'error';
 
-export type DecisionAdapterEvidence = z.infer<
-  typeof DecisionAdapterEvidenceSchema
->;
+export type AgeKeySeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 
-export const DecisionPolicyRefSchema = z
-  .object({
-    id: UuidSchema,
-    slug: z.string().min(1).max(64),
-    version: z.number().int().positive(),
-  })
-  .strict();
+export interface AgeKeyDecisionEnvelope {
+  decision_id?: string;
+  decision_domain: AgeKeyDecisionDomain;
+  decision: AgeKeyDecisionStatus;
 
-export type DecisionPolicyRef = z.infer<typeof DecisionPolicyRefSchema>;
+  tenant_id?: string;
+  application_id?: string;
+  policy_id?: string;
+  policy_version?: string;
+
+  resource?: string;
+  scope?: string[];
+
+  verification_session_id?: string;
+  result_token_id?: string;
+  consent_token_id?: string;
+  safety_alert_id?: string;
+
+  assurance_level?: string;
+  method?: string;
+
+  reason_code: string;
+  reason_codes?: string[];
+
+  risk_category?: string;
+  severity?: AgeKeySeverity;
+
+  actions?: string[];
+  step_up_required?: boolean;
+  parental_consent_required?: boolean;
+
+  expires_at?: string;
+  ttl_seconds?: number;
+
+  // Literais — não podem ser true. Garantia em nível de tipo.
+  content_included: false;
+  pii_included: false;
+}
+
+export const DecisionDomainSchema = z.enum([
+  'age_verify',
+  'parental_consent',
+  'safety_signal',
+  'credential',
+  'gateway',
+  'fallback',
+]);
+
+export const DecisionStatusSchema = z.enum([
+  'approved',
+  'denied',
+  'pending',
+  'pending_guardian',
+  'pending_verification',
+  'needs_review',
+  'expired',
+  'revoked',
+  'blocked_by_policy',
+  'step_up_required',
+  'rate_limited',
+  'soft_blocked',
+  'hard_blocked',
+  'error',
+]);
+
+export const SeveritySchema = z.enum(['info', 'low', 'medium', 'high', 'critical']);
 
 export const DecisionEnvelopeSchema = z
   .object({
-    envelope_version: z.literal(DECISION_ENVELOPE_VERSION),
-    tenant_id: UuidSchema,
-    application_id: UuidSchema,
-    session_id: UuidSchema,
-    policy: DecisionPolicyRefSchema,
-
-    decision: VerificationDecisionSchema,
-    threshold_satisfied: z.boolean(),
-    age_threshold: AgeThresholdSchema,
-    age_band: AgeBandSchema.nullable(),
-    method: VerificationMethodSchema,
-    assurance_level: AssuranceLevelSchema,
-    reason_code: z.string().min(1).max(64),
-
-    evidence: DecisionAdapterEvidenceSchema,
-
-    /** Unix seconds. */
-    issued_at: z.number().int().positive(),
-    /** Unix seconds. Must be >= issued_at. */
-    expires_at: z.number().int().positive(),
-
-    /** Opaque client reference. NEVER PII. May be null. */
-    external_user_ref: z.string().min(8).max(256).nullable(),
+    decision_id: z.string().min(1).optional(),
+    decision_domain: DecisionDomainSchema,
+    decision: DecisionStatusSchema,
+    tenant_id: z.string().min(1).optional(),
+    application_id: z.string().min(1).optional(),
+    policy_id: z.string().min(1).optional(),
+    policy_version: z.string().min(1).optional(),
+    resource: z.string().min(1).max(255).optional(),
+    scope: z.array(z.string().min(1).max(64)).max(64).optional(),
+    verification_session_id: z.string().min(1).optional(),
+    result_token_id: z.string().min(1).optional(),
+    consent_token_id: z.string().min(1).optional(),
+    safety_alert_id: z.string().min(1).optional(),
+    assurance_level: z.string().min(1).optional(),
+    method: z.string().min(1).optional(),
+    reason_code: z.string().min(1),
+    reason_codes: z.array(z.string().min(1)).max(32).optional(),
+    risk_category: z.string().min(1).max(64).optional(),
+    severity: SeveritySchema.optional(),
+    actions: z.array(z.string().min(1).max(64)).max(32).optional(),
+    step_up_required: z.boolean().optional(),
+    parental_consent_required: z.boolean().optional(),
+    expires_at: z.string().datetime().optional(),
+    ttl_seconds: z.number().int().positive().optional(),
+    content_included: z.literal(false),
+    pii_included: z.literal(false),
   })
-  .strict()
-  .superRefine((env, ctx) => {
-    if (env.expires_at <= env.issued_at) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'expires_at must be strictly greater than issued_at',
-        path: ['expires_at'],
-      });
-    }
-    if (env.decision === 'approved' && env.threshold_satisfied !== true) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'approved decisions require threshold_satisfied = true',
-        path: ['threshold_satisfied'],
-      });
-    }
-    if (env.decision === 'denied' && env.threshold_satisfied !== false) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'denied decisions require threshold_satisfied = false',
-        path: ['threshold_satisfied'],
-      });
-    }
-  });
+  .strict();
 
-export type DecisionEnvelope = z.infer<typeof DecisionEnvelopeSchema>;
+export type DecisionEnvelopeParsed = z.infer<typeof DecisionEnvelopeSchema>;
 
 /**
- * Validate envelope shape AND assert no PII keys leaked into evidence/extra.
- * The Core invokes this before signing; webhook fan-out invokes it before
- * enqueuing.
+ * Cria um envelope canônico já com `content_included: false` e
+ * `pii_included: false` definidos. O caller só fornece os campos próprios
+ * de domínio. Validação Zod aplicada para garantir contrato e ausência
+ * de campos extras.
  */
-export function assertDecisionEnvelopeIsPublicSafe(
-  envelope: DecisionEnvelope,
-): DecisionEnvelope {
-  const parsed = DecisionEnvelopeSchema.parse(envelope);
-  assertPublicPayloadHasNoPii(parsed);
-  return parsed;
+export function createDecisionEnvelope(
+  input: Omit<AgeKeyDecisionEnvelope, 'content_included' | 'pii_included'>,
+): AgeKeyDecisionEnvelope {
+  const candidate: AgeKeyDecisionEnvelope = {
+    ...input,
+    content_included: false,
+    pii_included: false,
+  };
+  return DecisionEnvelopeSchema.parse(candidate) as AgeKeyDecisionEnvelope;
 }
 
 /**
- * Project an envelope into the public AgeKey token claims. Pure function — no
- * I/O, no signing. The caller adds `iss`, `aud` and `jti`, then signs.
- *
- * The mapping is total: every claim required by `ResultTokenClaimsSchema`
- * comes from the envelope, so a token cannot include data the envelope did
- * not contain.
+ * Indica se o status é terminal (não evolui mais sem nova ação humana ou
+ * nova sessão).
  */
-export function envelopeToTokenClaims(
-  envelope: DecisionEnvelope,
-  refs: { iss: string; aud: string; jti: string },
-): ResultTokenClaims {
-  const claims: ResultTokenClaims = {
-    iss: refs.iss,
-    aud: refs.aud,
-    jti: refs.jti,
-    iat: envelope.issued_at,
-    nbf: envelope.issued_at,
-    exp: envelope.expires_at,
-    agekey: {
-      decision: envelope.decision,
-      threshold_satisfied: envelope.threshold_satisfied,
-      age_threshold: envelope.age_threshold,
-      method: envelope.method,
-      assurance_level: envelope.assurance_level,
-      reason_code: envelope.reason_code,
-      policy: {
-        id: envelope.policy.id,
-        slug: envelope.policy.slug,
-        version: envelope.policy.version,
-      },
-      tenant_id: envelope.tenant_id,
-      application_id: envelope.application_id,
-    },
-  };
-  if (envelope.external_user_ref != null) {
-    claims.sub = envelope.external_user_ref;
-  }
-  return claims;
+export function isTerminalDecision(status: AgeKeyDecisionStatus): boolean {
+  return (
+    status === 'approved' ||
+    status === 'denied' ||
+    status === 'expired' ||
+    status === 'revoked' ||
+    status === 'blocked_by_policy' ||
+    status === 'hard_blocked'
+  );
+}
+
+/**
+ * Indica se o status pode ser resolvido por uma ação automática do mesmo
+ * fluxo (sem nova interação do usuário final).
+ */
+export function isPendingDecision(status: AgeKeyDecisionStatus): boolean {
+  return (
+    status === 'pending' ||
+    status === 'pending_guardian' ||
+    status === 'pending_verification' ||
+    status === 'needs_review' ||
+    status === 'step_up_required'
+  );
 }

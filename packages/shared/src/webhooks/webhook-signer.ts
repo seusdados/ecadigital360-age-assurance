@@ -1,90 +1,97 @@
-// Webhook signer — pure Web Crypto HMAC-SHA256.
+// Webhook signer canônico do AgeKey — HMAC SHA-256 puro via Web Crypto.
 //
-// AgeKey webhooks are signed with HMAC-SHA256 over the exact JSON body that
-// the receiver will see. The signature is sent as hex in the header
-// `X-AgeKey-Signature`. The trigger in `supabase/migrations/012_webhook_enqueue.sql`
-// computes the same HMAC inside Postgres using pgcrypto's `hmac()`; this
-// module is the TypeScript equivalent used by SDK consumers and the
-// edge-function side of the worker (when re-signing during enqueue).
-//
-// Comparison is constant-time to prevent signature timing oracles.
-//
-// Reference: docs/specs/agekey-core-canonical-contracts.md §Webhook signer.
-
-export const WEBHOOK_SIGNATURE_HEADER = 'X-AgeKey-Signature';
-export const WEBHOOK_DELIVERY_ID_HEADER = 'X-AgeKey-Delivery-Id';
-export const WEBHOOK_EVENT_TYPE_HEADER = 'X-AgeKey-Event-Type';
+// Funciona em Deno (Edge Functions), Node 20+ e browsers. Não depende de
+// libs externas. Documentação: docs/specs/agekey-webhook-contract.md
 
 const ENCODER = new TextEncoder();
 
-function toBytes(value: string | Uint8Array): Uint8Array<ArrayBuffer> {
-  if (typeof value === 'string') return ENCODER.encode(value);
-  // Copy into a fresh ArrayBuffer-backed view so the result is always
-  // assignable to the strict `Uint8Array<ArrayBuffer>` parameter that
-  // crypto.subtle.{importKey,sign} expects.
-  const out = new Uint8Array(value.byteLength);
-  out.set(value);
+function bytesToHex(bytes: Uint8Array): string {
+  let hex = '';
+  for (const b of bytes) hex += b.toString(16).padStart(2, '0');
+  return hex;
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+  if (clean.length % 2 !== 0) throw new Error('hex string with odd length');
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    out[i / 2] = parseInt(clean.slice(i, i + 2), 16);
+  }
   return out;
 }
 
-function bytesToHex(bytes: ArrayBuffer | Uint8Array): string {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let out = '';
-  for (const b of view) out += b.toString(16).padStart(2, '0');
-  return out;
-}
-
-/**
- * Compute the lowercase hex HMAC-SHA256 of `body` using `secret`.
- *
- * `body` MUST be the exact byte sequence the HTTP receiver will read from the
- * wire — typically `JSON.stringify(payload)` with no surrounding whitespace.
- * The signer never re-serialises the payload itself; that is the caller's
- * responsibility, because any whitespace difference would invalidate the
- * signature on the receiver side.
- */
-export async function signWebhookPayload(
-  secret: string | Uint8Array,
-  body: string | Uint8Array,
-): Promise<string> {
-  const key = await crypto.subtle.importKey(
+async function importHmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
     'raw',
-    toBytes(secret),
+    ENCODER.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign'],
+    ['sign', 'verify'],
   );
-  const sig = await crypto.subtle.sign('HMAC', key, toBytes(body));
-  return bytesToHex(sig);
 }
 
 /**
- * Constant-time hex comparison. Returns false for any length mismatch and
- * never short-circuits on equal-length inputs.
+ * Assinatura canônica de webhook do AgeKey.
+ *
+ * Entrada para o HMAC: `${timestamp}.${nonce}.${rawBody}`.
+ *
+ * Retorna a assinatura em hex lowercase, formato `sha256=...`. O receiver
+ * deve comparar em tempo constante.
  */
-export function constantTimeEqualHex(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
+export async function signWebhookPayload(args: {
+  secret: string;
+  rawBody: string;
+  timestamp: string; // segundos epoch como string
+  nonce: string;
+}): Promise<string> {
+  const key = await importHmacKey(args.secret);
+  const input = `${args.timestamp}.${args.nonce}.${args.rawBody}`;
+  const sig = await crypto.subtle.sign('HMAC', key, ENCODER.encode(input));
+  return `sha256=${bytesToHex(new Uint8Array(sig))}`;
+}
+
+/**
+ * Verifica assinatura recebida em tempo constante.
+ *
+ * Devolve `false` quando a estrutura é inválida, em vez de lançar — para
+ * facilitar tratamento defensivo no receiver.
+ */
+export async function verifyWebhookSignature(args: {
+  secret: string;
+  rawBody: string;
+  timestamp: string;
+  nonce: string;
+  signatureHeader: string; // `sha256=<hex>`
+}): Promise<boolean> {
+  if (!args.signatureHeader.startsWith('sha256=')) return false;
+  const provided = args.signatureHeader.slice('sha256='.length);
+  let providedBytes: Uint8Array;
+  try {
+    providedBytes = hexToBytes(provided);
+  } catch {
+    return false;
+  }
+
+  const key = await importHmacKey(args.secret);
+  const input = `${args.timestamp}.${args.nonce}.${args.rawBody}`;
+  const expected = new Uint8Array(
+    await crypto.subtle.sign('HMAC', key, ENCODER.encode(input)),
+  );
+  if (expected.length !== providedBytes.length) return false;
+
   let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < expected.length; i++) {
+    diff |= (expected[i] ?? 0) ^ (providedBytes[i] ?? 0);
   }
   return diff === 0;
 }
 
 /**
- * Verify a webhook signature. Returns false (never throws) if the signature
- * is malformed, the wrong length, or computed over a different body.
- *
- * Both ASCII case forms of the hex string are accepted on input; comparison
- * happens after lowercasing both sides.
+ * Hash canônico do payload (`payload_hash` no `AgeKeyWebhookPayload`).
+ * SHA-256 hex lowercase do `rawBody` JSON canônico.
  */
-export async function verifyWebhookPayload(
-  secret: string | Uint8Array,
-  body: string | Uint8Array,
-  signatureHex: string,
-): Promise<boolean> {
-  if (typeof signatureHex !== 'string') return false;
-  if (!/^[0-9a-fA-F]{64}$/.test(signatureHex)) return false;
-  const expected = await signWebhookPayload(secret, body);
-  return constantTimeEqualHex(expected, signatureHex.toLowerCase());
+export async function payloadHash(rawBody: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', ENCODER.encode(rawBody));
+  return bytesToHex(new Uint8Array(digest));
 }

@@ -25,10 +25,7 @@ export default function AuthLayout({
           </p>
         </div>
         <p className="text-xs text-muted-foreground/70">
-          © 2026 ECA Digital ·{' '}
-          <Link href="/faq" className="underline-offset-4 hover:underline">
-            FAQ
-          </Link>
+          © 2026 ECA Digital
         </p>
       </aside>
 

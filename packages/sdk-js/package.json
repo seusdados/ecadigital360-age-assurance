@@ -17,6 +17,11 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
+    },
+    "./safety": {
+      "types": "./dist/safety.d.ts",
+      "import": "./dist/safety.js",
+      "default": "./dist/safety.js"
     }
   },
   "files": [

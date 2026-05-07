@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-staging.sh — aplica TODA a Fase 2 no projeto Supabase de homologação (AgeKey-hml).
+# setup-staging.sh — aplica TODA a Fase 2 no projeto Supabase staging.
 #
 # Pré-requisitos:
 #   - supabase CLI 1.180+ instalada
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-PROJECT_REF="wljedzqgprkpqhuazdzv"
+PROJECT_REF="tpdiccnmsnjtjwhardij"
 PROJECT_URL="https://${PROJECT_REF}.supabase.co"
 FUNCTIONS_BASE="${PROJECT_URL}/functions/v1"
 
@@ -70,7 +70,7 @@ if [[ $HAS_PSQL -eq 0 || -z "$DB_URL" ]]; then
 → psql não disponível ou DB_URL não obtida — aplique seeds manualmente.
 
   Caminho 1 (recomendado): SQL Editor do Dashboard, em
-    https://supabase.com/dashboard/project/wljedzqgprkpqhuazdzv/sql/new
+    https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij/sql/new
 
   Cole O CONTEÚDO COMPLETO de cada arquivo abaixo, NA ORDEM, e clique RUN:
     1. supabase/seed/01_jurisdictions.sql      (56 jurisdições)
@@ -152,12 +152,6 @@ FUNCTIONS=(
   retention-job
   trust-registry-refresh
 )
-# Notas sobre import_map:
-#  - O CLI atual do Supabase deprecou a flag --import-map; agora ele lê
-#    automaticamente supabase/functions/deno.json para resolver imports
-#    bare (zod, supabase-js, @agekey/*).
-#  - Mantemos supabase/functions/import_map.json como espelho legível,
-#    mas o deploy abaixo confia apenas no deno.json.
 for fn in "${FUNCTIONS[@]}"; do
   echo "→ deploy: $fn"
   supabase functions deploy "$fn" --no-verify-jwt

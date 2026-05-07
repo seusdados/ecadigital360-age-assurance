@@ -1,21 +1,13 @@
 # Deploy AgeKey — passo a passo do zero ao ar
 
-Guia operacional para subir o **ambiente de homologação** (`AgeKey-hml`)
-do AgeKey (Supabase + Vercel + GitHub) pela primeira vez. Escrito para
-alguém que está vendo o projeto pela primeira vez. **Tempo total
-estimado: 30–60 minutos**, depende principalmente do tempo do Supabase
-para responder.
-
-> **Para o ambiente de produção (`AgeKey-prod`, project ref
-> `tpdiccnmsnjtjwhardij`)**, seguir o runbook em
-> `infrastructure/environments.md` § "Production" — fluxo distinto, com
-> dupla confirmação interativa, seeds restritos a 01–03, rotação de
-> chave manual e bootstrap via Edge Function `tenant-bootstrap`. **Nunca
-> aplicar `04_dev_tenant.sql` em produção.**
+Guia operacional para subir todo o AgeKey (Supabase + Vercel + GitHub)
+pela primeira vez. Escrito para alguém que está vendo o projeto pela
+primeira vez. **Tempo total estimado: 30–60 minutos**, depende
+principalmente do tempo do Supabase para responder.
 
 > **Pré-requisitos:** macOS, Linux ou Windows com WSL2. Você precisa de
-> 3 contas: GitHub (você já tem — `seusdados`), Supabase (org `seusdados`
-> com projeto **`AgeKey-hml`** id `wljedzqgprkpqhuazdzv` já criado) e Vercel.
+> 3 contas: GitHub (você já tem — `seusdados`), Supabase (org "eca digital"
+> com projeto `tpdiccnmsnjtjwhardij` já criado) e Vercel.
 
 ---
 
@@ -153,7 +145,7 @@ admin (Fase 3 slice 1).
 
 ### 3.2) Habilitar extensões no Dashboard (uma vez)
 
-1. Abra https://supabase.com/dashboard/project/wljedzqgprkpqhuazdzv/database/extensions
+1. Abra https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij/database/extensions
 2. Procure e **habilite** (toggle ON) — uma de cada vez:
    - `pg_cron` ✓ (jobs agendados)
    - `pg_net` ✓ (HTTP requests dentro do Postgres)
@@ -189,18 +181,18 @@ bash supabase/scripts/setup-staging.sh
 ```
 
 O script faz, em ordem:
-- `supabase link --project-ref wljedzqgprkpqhuazdzv`
+- `supabase link --project-ref tpdiccnmsnjtjwhardij`
 - `supabase db push` (aplica migrations 000 → 014)
 - aplica os 4 seeds (jurisdições, trust registry, policies, dev tenant)
 - configura `app.cron_secret` e `app.functions_url` no Postgres
 - `supabase secrets set` para `CRON_SECRET`, `AGEKEY_*`
-- `supabase functions deploy --import-map supabase/functions/import_map.json` para todas as **21 Edge Functions** (o `import_map.json` resolve `zod`, `supabase-js` e os pacotes `@agekey/*` durante o empacotamento remoto, evitando o erro `Relative import path "zod"`)
+- `supabase functions deploy` para todas as **21 Edge Functions**
 - chama `key-rotation` uma vez para gerar a primeira chave de assinatura
 - gera `apps/admin/types/database.ts` com tipos reais
 
 **Output esperado no fim:**
 ```
-✓ Supabase configurado em wljedzqgprkpqhuazdzv
+✓ Supabase configurado em tpdiccnmsnjtjwhardij
 ✓ 21 Edge Functions deployadas
 ✓ Primeira crypto_key vault-backed criada
 ✓ Tipos do admin gerados em apps/admin/types/database.ts
@@ -209,7 +201,7 @@ O script faz, em ordem:
 ### 3.5) Smoke test — verificar que o backend responde
 
 ```bash
-export AK_BASE=https://wljedzqgprkpqhuazdzv.supabase.co/functions/v1
+export AK_BASE=https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1
 export AK_API_KEY=ak_dev_sk_test_0123456789abcdef
 
 # Cria uma sessão (deve retornar 201 com session_id e nonce)
@@ -251,7 +243,7 @@ vercel link
 
 ### 4.3) Configurar variáveis de ambiente
 
-Copie sua chave **anon** do Supabase: https://supabase.com/dashboard/project/wljedzqgprkpqhuazdzv/settings/api
+Copie sua chave **anon** do Supabase: https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij/settings/api
 (seção "Project API keys" → `anon public`)
 
 ```bash
@@ -260,13 +252,13 @@ vercel env add NEXT_PUBLIC_APP_URL          production
 # Cole: https://agekey.com.br      (ou a URL Vercel até o domínio próprio existir)
 
 vercel env add NEXT_PUBLIC_SUPABASE_URL     production
-# Cole: https://wljedzqgprkpqhuazdzv.supabase.co
+# Cole: https://tpdiccnmsnjtjwhardij.supabase.co
 
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 # Cole: <a chave anon copiada acima>
 
 vercel env add NEXT_PUBLIC_AGEKEY_API_BASE  production
-# Cole: https://wljedzqgprkpqhuazdzv.supabase.co/functions/v1
+# Cole: https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1
 
 vercel env add NEXT_PUBLIC_AGEKEY_ISSUER    production
 # Cole: https://staging.agekey.com.br
@@ -293,7 +285,7 @@ vercel deploy --prod
 
 > Sem isto, o login pelo painel não vai funcionar (cookie domain).
 
-1. Abra https://supabase.com/dashboard/project/wljedzqgprkpqhuazdzv/auth/url-configuration
+1. Abra https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij/auth/url-configuration
 2. Em **Site URL** ponha a URL do Vercel do passo 4.4 (ex.:
    `https://agekey-admin.vercel.app`)
 3. Em **Redirect URLs** adicione:
@@ -376,9 +368,9 @@ Se vazio, refaça o seed `04_dev_tenant.sql` no SQL Editor.
 | Coisa | URL |
 |---|---|
 | Painel admin (Vercel) | `https://agekey-admin.vercel.app` (ou domínio próprio) |
-| API base (Edge Functions) | `https://wljedzqgprkpqhuazdzv.supabase.co/functions/v1` |
+| API base (Edge Functions) | `https://tpdiccnmsnjtjwhardij.supabase.co/functions/v1` |
 | JWKS público | `.../functions/v1/jwks` |
-| Dashboard Supabase | https://supabase.com/dashboard/project/wljedzqgprkpqhuazdzv |
+| Dashboard Supabase | https://supabase.com/dashboard/project/tpdiccnmsnjtjwhardij |
 | Dashboard Vercel | https://vercel.com/<seu-time>/agekey-admin |
 | Repo + PRs | https://github.com/seusdados/ecadigital360-age-assurance |
 

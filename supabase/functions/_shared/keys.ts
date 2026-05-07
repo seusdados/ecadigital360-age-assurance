@@ -8,10 +8,6 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { InternalError } from './errors.ts';
 import type { JwsSigningKey } from './tokens.ts';
-import {
-  assertJwkIsPublic,
-  pickPublicJwk,
-} from '../../../packages/shared/src/jws.ts';
 
 /**
  * Loads the currently active signing key. The private JWK is read from
@@ -56,24 +52,14 @@ export async function loadActiveSigningKey(
 export async function loadJwksPublicKeys(
   client: SupabaseClient,
 ): Promise<Array<{ kid: string; publicJwk: JsonWebKey }>> {
-  // We expose `active` (current signing key), `rotating` (next key, public
-  // already published so clients can fetch ahead), and `retired` (recent
-  // keys still inside the token TTL window). All three statuses must be
-  // verifiable by external relying parties — but NEVER with private
-  // material attached.
   const { data, error } = await client
     .from('crypto_keys')
     .select('kid, status, public_jwk_json')
-    .in('status', ['active', 'rotating', 'retired']);
+    .in('status', ['active', 'retired']);
 
   if (error) throw error;
-  return (data ?? []).map((r) => {
-    // Defense-in-depth: even if `public_jwk_json` was accidentally written
-    // with private members, `pickPublicJwk` strips everything outside the
-    // public allowlist. `assertJwkIsPublic` then verifies the result is
-    // clean before it is returned to the caller.
-    const sanitized = pickPublicJwk(r.public_jwk_json);
-    assertJwkIsPublic(sanitized);
-    return { kid: r.kid as string, publicJwk: sanitized };
-  });
+  return (data ?? []).map((r) => ({
+    kid: r.kid,
+    publicJwk: r.public_jwk_json as JsonWebKey,
+  }));
 }

@@ -59,6 +59,26 @@ No estado atual do backend, o endpoint JWKS está nas Supabase Edge Functions. A
 
 Recomendação: se o cliente precisar correlacionar o usuário, enviar `external_user_ref` já como hash HMAC calculado pelo servidor do cliente.
 
+### Claims canônicas opcionais (Rodada Core readiness alignment)
+
+Para alinhar o token ao Decision Envelope canônico, os claims abaixo passam a ser **aceitos opcionalmente** dentro de `agekey.*`:
+
+```json
+{
+  "agekey": {
+    "decision_id": "uuid v7 do registro de decisão",
+    "decision_domain": "age_verify | parental_consent | safety_signal | credential | gateway | fallback",
+    "reason_codes": ["AGE_POLICY_SATISFIED", "..."]
+  }
+}
+```
+
+Compatibilidade:
+
+- Tokens emitidos **sem** essas extensões continuam válidos e aceitos pelos verificadores.
+- Tokens emitidos **com** essas extensões passam pela mesma validação ES256 + JWKS + `iss`/`aud`/`exp`/`nbf`.
+- O schema canônico é `ResultTokenClaimsCanonicalSchema` em `@agekey/shared/schemas`. O legado (`ResultTokenClaimsSchema`) tolera as extensões silenciosamente.
+
 ## Claims proibidas
 
 O token nunca deve conter:

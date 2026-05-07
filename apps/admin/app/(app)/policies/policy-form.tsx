@@ -314,8 +314,7 @@ export function PolicyForm({
                 <MethodPriorityEditor
                   value={field.value}
                   onChange={field.onChange}
-                  invalid={Boolean(fieldState.error)}
-                  errorId={fieldState.error ? 'policy-methods-error' : undefined}
+                  ariaInvalid={Boolean(fieldState.error)}
                 />
               </Field>
             )}
@@ -434,13 +433,11 @@ function Field({
 function MethodPriorityEditor({
   value,
   onChange,
-  invalid,
-  errorId,
+  ariaInvalid,
 }: {
   value: PolicyMethod[];
   onChange: (next: PolicyMethod[]) => void;
-  invalid: boolean;
-  errorId?: string;
+  ariaInvalid: boolean;
 }) {
   const ordered = useMemo<PolicyMethod[]>(() => {
     const seen = new Set<PolicyMethod>();
@@ -474,14 +471,10 @@ function MethodPriorityEditor({
 
   return (
     <div
-      id="policy-methods"
       role="group"
-      aria-label="Prioridade de métodos de verificação"
-      aria-describedby={errorId}
-      data-invalid={invalid ? 'true' : undefined}
+      aria-invalid={ariaInvalid}
       className={cn(
         'space-y-2 rounded-md border border-input bg-background/40 p-3',
-        invalid && 'border-destructive',
       )}
     >
       <ol className="space-y-1.5">

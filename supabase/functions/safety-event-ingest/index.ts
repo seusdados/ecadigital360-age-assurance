@@ -1,91 +1,78 @@
-// POST /v1/safety/event-ingest — accept a metadata-only safety event.
+// POST /v1/safety/event
 //
-// Auth: X-AgeKey-API-Key. The function:
-//   1. Hard-rejects raw content / PII keys before parsing.
-//   2. Validates the request with the canonical schema.
-//   3. Hashes actor / counterparty / IP / device with the per-tenant HMAC.
-//   4. Upserts safety_subjects + interaction + inserts a safety_events row.
-//   5. Loads aggregates and evaluates the active rule set.
-//   6. Builds a SafetyDecisionEnvelope, persists alerts when applicable.
-//   7. Returns the canonical decision; a SQL trigger fans out webhooks.
+// Auth: X-AgeKey-API-Key. Ingest principal do AgeKey Safety Signals.
 //
-// METADATA-ONLY contract is enforced at three layers:
-//   - boundary key check (rejectForbiddenIngestKeys),
-//   - SafetyEventIngestRequestSchema (literal `content_processed/stored=false`),
-//   - SQL CHECK constraints on safety_events.
-//
-// Reference: docs/modules/safety-signals/EDGE_FUNCTIONS.md
-//            docs/modules/safety-signals/PRIVACY_GUARD.md
+// 1. Valida payload via privacy guard `safety_event_v1` (rejeita
+//    conteúdo bruto e PII).
+// 2. Resolve/cria safety_subjects para actor (e counterparty se houver).
+// 3. Resolve/cria safety_interactions e deriva relationship.
+// 4. Insere safety_events (metadata-only).
+// 5. Atualiza aggregates relevantes.
+// 6. Avalia rule engine.
+// 7. Cria safety_alerts quando regra dispara.
+// 8. Cria step-up (verification_session) ou parental_consent_request
+//    quando ações exigirem.
+// 9. Retorna decision envelope minimizado.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-import {
-  SAFETY_FEATURE_FLAGS,
-  REASON_CODES,
-  SafetyEventIngestRequestSchema,
-  SafetyEventIngestResponseSchema,
-  assertPublicPayloadHasNoPii,
-  rejectForbiddenIngestKeys,
-  readSafetyFeatureFlag,
-} from '../../../packages/shared/src/index.ts';
 import { authenticateApiKey } from '../_shared/auth.ts';
 import { db, setTenantContext } from '../_shared/db.ts';
 import {
-  ForbiddenError,
-  InvalidRequestError,
   jsonResponse,
   respondError,
+  InvalidRequestError,
+  InternalError,
+  ForbiddenError,
 } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
 import { checkRateLimit } from '../_shared/rate-limit.ts';
 import {
-  buildSafetyDecisionEnvelope,
-  computeSafetyEnvelopePayloadHash,
+  SafetyEventIngestRequestSchema,
+  type SafetyEventIngestResponse,
+} from '../../../packages/shared/src/schemas/safety.ts';
+import {
+  assertPayloadSafe,
+  PrivacyGuardForbiddenClaimError,
+} from '../../../packages/shared/src/privacy/index.ts';
+import {
   deriveRelationship,
-  SYSTEM_SAFETY_RULES,
-  safetyEnvelopeAuditDiff,
-} from '../_shared/safety-envelope.ts';
-import { consentHmacHex } from '../_shared/consent-hmac.ts';
+  evaluateAllRules,
+  type RuleConfig,
+} from '../../../packages/shared/src/safety/index.ts';
+import { readSafetyFlags } from '../_shared/safety/feature-flags.ts';
+import { upsertSafetySubject } from '../_shared/safety/subject-resolver.ts';
+import {
+  incrementAggregate,
+  readAggregate,
+} from '../_shared/safety/aggregates.ts';
+import { createStepUpSession } from '../_shared/safety/step-up.ts';
+import { requestParentalConsentCheck } from '../_shared/safety/consent-check.ts';
+import { safetyPayloadHash } from '../_shared/safety/payload-hash.ts';
 
 const FN = 'safety-event-ingest';
-
-function moduleEnabled(): boolean {
-  return readSafetyFeatureFlag(
-    {
-      AGEKEY_SAFETY_SIGNALS_ENABLED: Deno.env.get(SAFETY_FEATURE_FLAGS.ENABLED),
-    },
-    SAFETY_FEATURE_FLAGS.ENABLED,
-  );
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const buf = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(value),
-  );
-  let hex = '';
-  for (const b of new Uint8Array(buf)) hex += b.toString(16).padStart(2, '0');
-  return hex;
-}
 
 serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
+
   const trace_id = newTraceId();
-  const fnCtx = { fn: FN, trace_id, origin: req.headers.get('origin') };
+  const origin = req.headers.get('origin');
+  const fnCtx = { fn: FN, trace_id, origin };
   const t0 = Date.now();
 
   if (req.method !== 'POST') {
     return respondError(fnCtx, new InvalidRequestError('Method not allowed'));
   }
-  if (!moduleEnabled()) {
-    return respondError(
-      fnCtx,
-      new ForbiddenError('Safety Signals module is disabled'),
-    );
-  }
 
   try {
+    const flags = readSafetyFlags();
+    if (!flags.enabled) {
+      throw new ForbiddenError(
+        'AgeKey Safety Signals module is disabled (AGEKEY_SAFETY_SIGNALS_ENABLED=false).',
+      );
+    }
+
     const client = db();
     const principal = await authenticateApiKey(client, req);
     await setTenantContext(client, principal.tenantId);
@@ -96,26 +83,32 @@ serve(async (req) => {
       principal.tenantId,
     );
 
+    const rawText = await req.text();
     let body: unknown;
     try {
-      body = await req.json();
+      body = JSON.parse(rawText);
     } catch {
       throw new InvalidRequestError('Invalid JSON body');
     }
 
-    // Boundary check FIRST — before Zod, so we can return the dedicated
-    // reason_code instead of the generic INVALID_REQUEST.
-    const forbidden = rejectForbiddenIngestKeys(body);
-    if (forbidden) {
-      throw new InvalidRequestError(
-        forbidden.reasonCode === REASON_CODES.SAFETY_RAW_CONTENT_REJECTED
-          ? 'Safety v1 is metadata-only; raw content is not accepted.'
-          : 'PII keys are not accepted on the safety ingest path.',
-        {
-          reason_code: forbidden.reasonCode,
-          offending: forbidden.offending,
-        },
-      );
+    // Privacy guard ANTES da validação Zod — bloqueia conteúdo bruto.
+    try {
+      assertPayloadSafe(body, 'safety_event_v1');
+    } catch (err) {
+      if (err instanceof PrivacyGuardForbiddenClaimError) {
+        log.warn('safety_event_blocked_by_privacy_guard', {
+          fn: FN,
+          trace_id,
+          tenant_id: principal.tenantId,
+          violations: err.violations.map((v) => v.path),
+          reason_code: err.reasonCode,
+        });
+        throw new InvalidRequestError(
+          'Payload contains forbidden keys (Safety v1 metadata-only)',
+          { reason_code: 'PRIVACY_CONTENT_NOT_ALLOWED_IN_V1' },
+        );
+      }
+      throw err;
     }
 
     const parsed = SafetyEventIngestRequestSchema.safeParse(body);
@@ -126,331 +119,341 @@ serve(async (req) => {
       );
     }
     const input = parsed.data;
-    if (input.application_id !== principal.applicationId) {
-      throw new ForbiddenError('application_id does not match API key');
+
+    // Privacy guard adicional na metadata (defesa em profundidade).
+    assertPayloadSafe(input.metadata, 'safety_event_v1');
+
+    const payloadHash = await safetyPayloadHash(rawText);
+
+    // Resolve actor + counterparty.
+    const actor = await upsertSafetySubject(client, {
+      tenantId: principal.tenantId,
+      applicationId: principal.applicationId,
+      subjectRefHmac: input.actor_subject_ref_hmac,
+      ageState: input.actor_age_state,
+    });
+
+    let counterparty: Awaited<ReturnType<typeof upsertSafetySubject>> | null = null;
+    if (input.counterparty_subject_ref_hmac) {
+      counterparty = await upsertSafetySubject(client, {
+        tenantId: principal.tenantId,
+        applicationId: principal.applicationId,
+        subjectRefHmac: input.counterparty_subject_ref_hmac,
+        ageState: input.counterparty_age_state,
+      });
     }
 
-    const actorRefHmac = await consentHmacHex(
-      client,
-      principal.tenantId,
-      'subject_ref',
-      input.actor_external_ref,
+    const relationship = deriveRelationship(
+      actor.age_state,
+      counterparty?.age_state ?? null,
     );
-    const counterpartyRefHmac = input.counterparty_external_ref
-      ? await consentHmacHex(
-          client,
-          principal.tenantId,
-          'subject_ref',
-          input.counterparty_external_ref,
-        )
-      : null;
-    const ipRefHmac = input.ip
-      ? await consentHmacHex(client, principal.tenantId, 'actor_ref', input.ip)
-      : null;
-    const deviceRefHmac = input.device_external_ref
-      ? await consentHmacHex(
-          client,
-          principal.tenantId,
-          'actor_ref',
-          input.device_external_ref,
-        )
-      : null;
-    const userAgentHash = input.user_agent
-      ? await sha256Hex(input.user_agent)
-      : null;
 
-    // Upsert subjects.
-    const ensureSubject = async (
-      ref: string,
-      ageState: typeof input.actor_age_state,
-    ) => {
-      const sel = await client
-        .from('safety_subjects')
-        .select('id')
+    // Upsert interaction.
+    let interactionId: string | null = null;
+    if (counterparty) {
+      const { data: existing } = await client
+        .from('safety_interactions')
+        .select('id, events_count')
         .eq('tenant_id', principal.tenantId)
         .eq('application_id', principal.applicationId)
-        .eq('subject_ref_hmac', ref)
+        .eq('actor_subject_id', actor.id)
+        .eq('counterparty_subject_id', counterparty.id)
         .maybeSingle();
-      if (sel.error) throw sel.error;
-      if (sel.data) {
+      if (existing) {
+        interactionId = (existing as { id: string }).id;
         await client
-          .from('safety_subjects')
+          .from('safety_interactions')
           .update({
-            current_age_state: ageState,
             last_seen_at: new Date().toISOString(),
+            events_count:
+              ((existing as { events_count: number }).events_count ?? 0) + 1,
+            relationship,
           })
-          .eq('id', sel.data.id);
-        return sel.data.id as string;
+          .eq('id', interactionId);
+      } else {
+        const { data: newInt } = await client
+          .from('safety_interactions')
+          .insert({
+            tenant_id: principal.tenantId,
+            application_id: principal.applicationId,
+            actor_subject_id: actor.id,
+            counterparty_subject_id: counterparty.id,
+            relationship,
+            events_count: 1,
+          })
+          .select('id')
+          .single();
+        interactionId = (newInt as { id: string } | null)?.id ?? null;
       }
-      const ins = await client
-        .from('safety_subjects')
-        .insert({
-          tenant_id: principal.tenantId,
-          application_id: principal.applicationId,
-          subject_ref_hmac: ref,
-          current_age_state: ageState,
-        })
-        .select('id')
-        .single();
-      if (ins.error) throw ins.error;
-      return ins.data.id as string;
-    };
+    }
 
-    const actorSubjectId = await ensureSubject(
-      actorRefHmac,
-      input.actor_age_state,
-    );
-    const counterpartySubjectId = counterpartyRefHmac
-      ? await ensureSubject(counterpartyRefHmac, input.counterparty_age_state)
-      : null;
-
-    const relationship = deriveRelationship(
-      input.actor_age_state,
-      input.counterparty_age_state,
-    );
-
-    // Insert safety_event row (the SQL CHECK forbids content_processed=true).
-    const eventInsert = await client
+    // Insere evento.
+    const { data: evtRow, error: evtErr } = await client
       .from('safety_events')
       .insert({
         tenant_id: principal.tenantId,
         application_id: principal.applicationId,
+        interaction_id: interactionId,
         event_type: input.event_type,
-        occurred_at: input.occurred_at,
-        interaction_ref: input.interaction_ref ?? null,
-        actor_subject_id: actorSubjectId,
-        counterparty_subject_id: counterpartySubjectId,
-        actor_ref_hmac: actorRefHmac,
-        counterparty_ref_hmac: counterpartyRefHmac,
-        actor_age_state: input.actor_age_state,
-        counterparty_age_state: input.counterparty_age_state,
-        relationship_type: relationship,
-        channel_type: input.channel_type,
-        ip_ref_hmac: ipRefHmac,
-        device_ref_hmac: deviceRefHmac,
-        user_agent_hash: userAgentHash,
-        duration_ms: input.duration_ms ?? null,
-        content_processed: false,
-        content_stored: false,
-        artifact_hash: input.artifact_hash ?? null,
-        artifact_type: input.artifact_type ?? null,
-        client_event_id: input.client_event_id ?? null,
-        metadata: input.metadata ?? {},
+        metadata_jsonb: input.metadata,
+        content_hash: input.content_hash ?? null,
+        payload_hash: payloadHash,
+        occurred_at: input.occurred_at ?? new Date().toISOString(),
+        retention_class: flags.defaultEventRetentionClass,
       })
       .select('id')
       .single();
-    if (eventInsert.error) throw eventInsert.error;
-    const safetyEventId = eventInsert.data.id as string;
+    if (evtErr || !evtRow) {
+      throw evtErr ?? new InternalError('Failed to insert safety_event');
+    }
+    const eventId = (evtRow as { id: string }).id;
 
-    // Load aggregate counters used by rules.
-    // For MVP we compute on-the-fly using simple count(*) windows.
-    const sinceIso24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-    const sinceIso7d = new Date(
-      Date.now() - 7 * 24 * 3600 * 1000,
-    ).toISOString();
-    const sinceIso30d = new Date(
-      Date.now() - 30 * 24 * 3600 * 1000,
-    ).toISOString();
+    // Aggregates relevantes.
+    if (
+      counterparty &&
+      relationship === 'adult_to_minor' &&
+      (input.event_type === 'message_sent' ||
+        input.event_type === 'message_received')
+    ) {
+      await incrementAggregate(client, {
+        tenantId: principal.tenantId,
+        applicationId: principal.applicationId,
+        subjectId: counterparty.id,
+        aggregateKey: 'adult_to_minor_messages_24h',
+        window: '24h',
+      });
+    }
+    if (input.event_type === 'report_filed' && counterparty) {
+      await incrementAggregate(client, {
+        tenantId: principal.tenantId,
+        applicationId: principal.applicationId,
+        subjectId: counterparty.id, // counterparty é o ator reportado
+        aggregateKey: 'reports_against_actor_7d',
+        window: '7d',
+      });
+    }
 
-    const c24 = await client
-      .from('safety_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', principal.tenantId)
-      .eq('actor_ref_hmac', actorRefHmac)
-      .gte('occurred_at', sinceIso24h);
-    if (c24.error) throw c24.error;
-    const c7 = await client
-      .from('safety_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', principal.tenantId)
-      .eq('actor_ref_hmac', actorRefHmac)
-      .gte('occurred_at', sinceIso7d);
-    if (c7.error) throw c7.error;
-    const c30 = await client
-      .from('safety_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', principal.tenantId)
-      .eq('actor_ref_hmac', actorRefHmac)
-      .gte('occurred_at', sinceIso30d);
-    if (c30.error) throw c30.error;
+    // Lê aggregates para regras.
+    const aggregateMessages = counterparty
+      ? await readAggregate(client, {
+          tenantId: principal.tenantId,
+          applicationId: principal.applicationId,
+          subjectId: counterparty.id,
+          aggregateKey: 'adult_to_minor_messages_24h',
+          window: '24h',
+        })
+      : 0;
+    const aggregateReports = counterparty
+      ? await readAggregate(client, {
+          tenantId: principal.tenantId,
+          applicationId: principal.applicationId,
+          subjectId: counterparty.id,
+          aggregateKey: 'reports_against_actor_7d',
+          window: '7d',
+        })
+      : 0;
 
-    const reportsAgainstActor = await client
-      .from('safety_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', principal.tenantId)
-      .eq('counterparty_ref_hmac', actorRefHmac)
-      .eq('event_type', 'report_submitted')
-      .gte('occurred_at', sinceIso7d);
-    if (reportsAgainstActor.error) throw reportsAgainstActor.error;
-
-    const linkAttempts24h = await client
-      .from('safety_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', principal.tenantId)
-      .eq('actor_ref_hmac', actorRefHmac)
-      .eq('event_type', 'external_link_attempt')
-      .gte('occurred_at', sinceIso24h);
-    if (linkAttempts24h.error) throw linkAttempts24h.error;
-
-    const mediaToMinor24h = await client
-      .from('safety_events')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', principal.tenantId)
-      .eq('actor_ref_hmac', actorRefHmac)
-      .eq('relationship_type', 'adult_to_minor')
-      .eq('event_type', 'media_upload_attempt')
-      .gte('occurred_at', sinceIso24h);
-    if (mediaToMinor24h.error) throw mediaToMinor24h.error;
-
-    // Tenant rules layered on top of system rules. The tenant copy can
-    // disable a system rule by inserting a row with the same `rule_key`
-    // and `enabled = false`.
-    const tenantRulesQ = await client
+    // Carrega rule configs (per-tenant + global default).
+    const { data: ruleRows } = await client
       .from('safety_rules')
-      .select(
-        'rule_key, name, description, risk_category, severity, condition_json, action_json, enabled, is_system_rule',
-      )
-      .eq('tenant_id', principal.tenantId)
-      .eq('enabled', true);
-    if (tenantRulesQ.error) throw tenantRulesQ.error;
-    type TenantRuleRow = {
-      rule_key: string;
-      name: string;
-      description: string | null;
-      risk_category: string;
-      severity: 'low' | 'medium' | 'high' | 'critical';
-      condition_json: unknown;
-      action_json: unknown;
+      .select('rule_code, enabled, severity, actions, config_json, tenant_id')
+      .or(`tenant_id.eq.${principal.tenantId},tenant_id.is.null`);
+
+    // Quando há override per-tenant, ele substitui o global.
+    const byCode = new Map<string, RuleConfig>();
+    for (const r of (ruleRows ?? []) as Array<{
+      rule_code: string;
       enabled: boolean;
-      is_system_rule: boolean;
-    };
-    const tenantRules = ((tenantRulesQ.data ?? []) as TenantRuleRow[]).map(
-      (r) => ({
-        id: r.rule_key,
-        name: r.name,
-        description: r.description ?? undefined,
-        enabled: r.enabled,
-        is_system_rule: r.is_system_rule,
-        risk_category: r.risk_category,
-        severity: r.severity,
-        condition: r.condition_json as never,
-        actions: r.action_json as never,
-      }),
+      severity: string;
+      actions: string[];
+      config_json: Record<string, unknown>;
+      tenant_id: string | null;
+    }>) {
+      const existing = byCode.get(r.rule_code);
+      if (!existing || (existing && r.tenant_id !== null)) {
+        byCode.set(r.rule_code, {
+          rule_code: r.rule_code as RuleConfig['rule_code'],
+          enabled: r.enabled,
+          severity: r.severity as RuleConfig['severity'],
+          actions: r.actions as RuleConfig['actions'],
+          config_json: r.config_json,
+        });
+      }
+    }
+    const configs = Array.from(byCode.values());
+
+    const hasMedia = input.event_type === 'media_upload';
+    const hasExternalLink =
+      input.event_type === 'external_link_shared' &&
+      Boolean((input.metadata as { has_external_url?: boolean }).has_external_url);
+
+    const evalResult = evaluateAllRules(
+      {
+        event_type: input.event_type,
+        relationship,
+        aggregates: {
+          adult_to_minor_messages_24h: aggregateMessages,
+          reports_against_actor_7d: aggregateReports,
+        },
+        content_hash: input.content_hash,
+        has_media: hasMedia,
+        has_external_link: hasExternalLink,
+      },
+      configs,
     );
 
-    const envelope = buildSafetyDecisionEnvelope({
-      tenant_id: principal.tenantId,
-      application_id: principal.applicationId,
-      safety_event_id: safetyEventId,
-      safety_alert_id: null,
-      interaction_id: null,
-      verification_session_id: null,
-      consent_request_id: null,
-      event_type: input.event_type,
-      channel_type: input.channel_type,
-      actor_age_state: input.actor_age_state,
-      counterparty_age_state: input.counterparty_age_state,
-      actor_ref_hmac: actorRefHmac,
-      counterparty_ref_hmac: counterpartyRefHmac,
-      rules: [
-        ...SYSTEM_SAFETY_RULES,
-        ...(tenantRules as unknown as typeof SYSTEM_SAFETY_RULES),
-      ],
-      context: {
-        event_type: input.event_type,
-        channel_type: input.channel_type,
-        relationship_type: relationship,
-        actor_age_state: input.actor_age_state,
-        counterparty_age_state: input.counterparty_age_state,
-        aggregate_24h_count: c24.count ?? 0,
-        aggregate_7d_count: c7.count ?? 0,
-        aggregate_30d_count: c30.count ?? 0,
-        aggregate_actor_reports_7d: reportsAgainstActor.count ?? 0,
-        aggregate_link_attempts_24h: linkAttempts24h.count ?? 0,
-        aggregate_media_to_minor_24h: mediaToMinor24h.count ?? 0,
-        consent_status: 'absent',
-        verification_assurance_level: null,
-      },
-    });
+    let alertId: string | null = null;
+    let stepUpSessionId: string | null = null;
+    let parentalConsentRequestId: string | null = null;
 
-    let safetyAlertId: string | null = null;
-    if (envelope.actions.includes('create_alert') ||
-        envelope.actions.includes('queue_for_human_review') ||
-        envelope.severity === 'high' ||
-        envelope.severity === 'critical') {
-      const ains = await client
+    if (evalResult.aggregated.triggered_rules.length > 0) {
+      const primaryRuleCode = evalResult.aggregated.triggered_rules[0]!;
+
+      // Step-up: cria verification_session.
+      if (evalResult.aggregated.step_up_required) {
+        // Resolve a primeira policy ativa do tenant para step-up
+        // (configuração avançada fica para rodada futura).
+        const { data: policyRow } = await client
+          .from('policies')
+          .select('id, current_version')
+          .eq('tenant_id', principal.tenantId)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        if (policyRow) {
+          const { data: versionRow } = await client
+            .from('policy_versions')
+            .select('id')
+            .eq('policy_id', (policyRow as { id: string }).id)
+            .eq('version', (policyRow as { current_version: number }).current_version)
+            .single();
+          if (versionRow) {
+            const stepUp = await createStepUpSession(client, {
+              tenantId: principal.tenantId,
+              applicationId: principal.applicationId,
+              policyId: (policyRow as { id: string }).id,
+              policyVersionId: (versionRow as { id: string }).id,
+              externalUserRef: counterparty?.id ?? actor.id,
+              locale: input.locale ?? 'pt-BR',
+            });
+            stepUpSessionId = stepUp.session_id;
+          }
+        }
+      }
+
+      // Parental consent check.
+      if (
+        evalResult.aggregated.parental_consent_required &&
+        flags.parentalConsentEnabled &&
+        counterparty
+      ) {
+        const { data: policyRow } = await client
+          .from('policies')
+          .select('id, current_version')
+          .eq('tenant_id', principal.tenantId)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        if (policyRow) {
+          const { data: versionRow } = await client
+            .from('policy_versions')
+            .select('id')
+            .eq('policy_id', (policyRow as { id: string }).id)
+            .eq('version', (policyRow as { current_version: number }).current_version)
+            .single();
+          const { data: ctvRow } = await client
+            .from('consent_text_versions')
+            .select('id')
+            .eq('tenant_id', principal.tenantId)
+            .eq('policy_id', (policyRow as { id: string }).id)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+          if (versionRow && ctvRow) {
+            const consent = await requestParentalConsentCheck(client, {
+              tenantId: principal.tenantId,
+              applicationId: principal.applicationId,
+              policyId: (policyRow as { id: string }).id,
+              policyVersionId: (versionRow as { id: string }).id,
+              consentTextVersionId: (ctvRow as { id: string }).id,
+              resource: `safety/${input.event_type}`,
+              childRefHmac: counterparty.subject_ref_hmac ?? counterparty.id,
+              purposeCodes: ['safety_signal_response'],
+              dataCategories: ['interaction_metadata'],
+              locale: input.locale ?? 'pt-BR',
+            });
+            parentalConsentRequestId = consent.consent_request_id;
+          }
+        }
+      }
+
+      // Cria alert.
+      const { data: alertRow, error: alertErr } = await client
         .from('safety_alerts')
         .insert({
           tenant_id: principal.tenantId,
           application_id: principal.applicationId,
-          severity: envelope.severity,
-          risk_category: envelope.risk_category,
-          actor_subject_id: actorSubjectId,
-          counterparty_subject_id: counterpartySubjectId,
-          interaction_id: null,
-          reason_codes: envelope.reason_codes,
-          event_ids: [safetyEventId],
-          score: envelope.score,
-          human_review_required: envelope.actions.includes(
-            'queue_for_human_review',
-          ),
+          rule_code: primaryRuleCode,
+          status: 'open',
+          severity: evalResult.aggregated.severity,
+          risk_category: evalResult.aggregated.risk_category,
+          reason_codes: evalResult.aggregated.reason_codes,
+          actions_taken: evalResult.aggregated.actions,
+          actor_subject_id: actor.id,
+          counterparty_subject_id: counterparty?.id ?? null,
+          step_up_session_id: stepUpSessionId,
+          parental_consent_request_id: parentalConsentRequestId,
+          triggering_event_ids: [eventId],
         })
         .select('id')
         .single();
-      if (ains.error) throw ains.error;
-      safetyAlertId = ains.data.id as string;
+      if (alertErr || !alertRow) {
+        throw alertErr ?? new InternalError('Failed to create alert');
+      }
+      alertId = (alertRow as { id: string }).id;
+
+      // Atualiza counters do counterparty (que está no centro do alerta).
+      if (counterparty) {
+        await client
+          .from('safety_subjects')
+          .update({ alerts_count: counterparty.alerts_count + 1 })
+          .eq('id', counterparty.id);
+      }
     }
 
-    // Audit row (additive — the SQL trigger also writes one).
-    const payloadHash = await computeSafetyEnvelopePayloadHash({
-      ...envelope,
-      safety_alert_id: safetyAlertId,
-    });
-    const auditDiff = safetyEnvelopeAuditDiff(
-      { ...envelope, safety_alert_id: safetyAlertId },
-      payloadHash,
-    );
-    await client.from('audit_events').insert({
-      tenant_id: principal.tenantId,
-      actor_type: 'system',
-      action: 'safety.event_evaluated',
-      resource_type: 'safety_signal',
-      resource_id: safetyEventId,
-      diff_json: auditDiff,
-    });
-
-    const responseBody = {
-      decision: envelope.decision,
-      severity: envelope.severity,
-      risk_category: envelope.risk_category,
-      reason_codes: envelope.reason_codes,
-      safety_event_id: safetyEventId,
-      safety_alert_id: safetyAlertId,
-      step_up_required: envelope.step_up_required,
-      parental_consent_required: envelope.parental_consent_required,
-      actions: envelope.actions,
-      ttl_seconds: envelope.ttl_seconds,
-      pii_included: false as const,
-      content_included: false as const,
+    const response: SafetyEventIngestResponse = {
+      event_id: eventId,
+      actor_subject_id: actor.id,
+      counterparty_subject_id: counterparty?.id ?? null,
+      decision: evalResult.aggregated.decision,
+      reason_codes: evalResult.aggregated.reason_codes,
+      severity: evalResult.aggregated.severity,
+      alert_id: alertId,
+      step_up_session_id: stepUpSessionId,
+      content_included: false,
+      pii_included: false,
     };
-    assertPublicPayloadHasNoPii(responseBody);
-    const validated = SafetyEventIngestResponseSchema.parse(responseBody);
+
+    // Defesa final.
+    assertPayloadSafe(response, 'public_api_response');
 
     log.info('safety_event_ingested', {
       fn: FN,
       trace_id,
       tenant_id: principal.tenantId,
       application_id: principal.applicationId,
-      safety_event_id: safetyEventId,
-      safety_alert_id: safetyAlertId,
-      decision: envelope.decision,
-      severity: envelope.severity,
-      relationship: relationship,
+      event_id: eventId,
+      relationship,
+      decision: evalResult.aggregated.decision,
+      reason_codes: evalResult.aggregated.reason_codes,
+      severity: evalResult.aggregated.severity,
+      alert_id: alertId,
+      step_up_session_id: stepUpSessionId,
       duration_ms: Date.now() - t0,
       status: 200,
     });
 
-    return jsonResponse(validated, { origin: fnCtx.origin });
+    return jsonResponse(response, { origin });
   } catch (err) {
     return respondError(fnCtx, err);
   }

@@ -23,11 +23,6 @@ supabase/functions/.env
 *.p12
 *.keystore
 
-# Compliance — on-call private contacts (LGPD: nomes/telefones do owner;
-# nunca devem ir para o repo). README.md fica versionado.
-compliance/oncall/contacts.private.md
-compliance/oncall/*.private.*
-
 # OS
 .DS_Store
 Thumbs.db

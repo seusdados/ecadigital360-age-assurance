@@ -31,10 +31,6 @@ export default function HomePage() {
 
       <footer className="mt-auto pt-16 text-xs text-muted-foreground">
         © 2026 ECA Digital · {' '}
-        <Link href="/faq" className="underline-offset-4 hover:underline">
-          FAQ
-        </Link>
-        {' · '}
         <a href="/legal/privacy" className="underline-offset-4 hover:underline">
           Política de Privacidade
         </a>

@@ -1,158 +1,97 @@
-// Privacy Guard
+// Privacy Guard legado do AgeKey.
 //
-// Defensive utility that walks a payload tree and rejects keys that would
-// leak personally identifiable / age-revealing data on the public AgeKey
-// surface (tokens, adapter responses, SDK responses, webhook payloads).
+// Estado: superfície estável (zero quebra) + delegação interna para o
+// guard canônico em `./privacy/privacy-guard.ts`. Toda chave bloqueada
+// pelo legado continua bloqueada; chaves novas adicionadas pela camada
+// canônica (`first_name`, `last_name`, `civil_name`, `id_number`,
+// `passport`, `selfie`, `biometric_template`, `ip`, `gps`,
+// `latitude`, `longitude`, `guardian_email`, `guardian_phone`,
+// `guardian_name`, `raw_text`, `message`, `image`, `video`, `audio`...)
+// agora também passam a ser bloqueadas via delegação — isso é
+// estritamente mais restritivo que o comportamento anterior, ou seja,
+// não introduz aprovação onde antes havia rejeição.
 //
-// The guard inspects KEY NAMES, not values. It is a key-shape blacklist and
-// does not replace the contract minimization performed by adapters and the
-// token signer. It is meant to be the last line of defense before a payload
-// crosses a tenant or product boundary.
-//
-// Keys are matched case-insensitively after stripping `-` and `_` so that
-// `date_of_birth`, `date-of-birth`, `dateOfBirth` and `DATEOFBIRTH` all map
-// to the same canonical token. `age_threshold` is intentionally NOT a
-// violation — it describes policy, not the user.
-//
-// Reference: docs/specs/agekey-token.md, docs/specs/sdk-public-contract.md
+// Documentação: docs/specs/agekey-privacy-guard-canonical.md
 
-export const FORBIDDEN_PUBLIC_KEYS = [
-  // Birthdate / age (the user's age)
-  'birthdate',
-  'date_of_birth',
-  'dob',
-  'idade',
-  'age',
-  'exact_age',
-  'birth_date',
-  'birthday',
-  'data_nascimento',
-  'nascimento',
-  // Civil identifiers
-  'document',
-  'cpf',
-  'cnh',
-  'rg',
-  'passport',
-  'passport_number',
-  'id_number',
-  'civil_id',
-  'social_security',
-  'ssn',
-  // Personal names
-  'name',
-  'full_name',
-  'nome',
-  'nome_completo',
-  'first_name',
-  'last_name',
-  // Direct contact
-  'email',
-  'phone',
-  'mobile',
-  'telefone',
-  // Address
-  'address',
-  'endereco',
-  'street',
-  'postcode',
-  'zipcode',
-  // Biometrics / face / raw artifacts
-  'selfie',
-  'face',
-  'face_image',
-  'biometric',
-  'biometrics',
-  'raw_id',
-] as const;
-
-const ALLOWED_OVERRIDES: ReadonlySet<string> = new Set([
-  // Policy-related — describes the threshold of the policy, not the user.
-  'age_threshold',
-  'age_band_min',
-  'age_band_max',
-]);
-
-function canonicalize(key: string): string {
-  // lower-case, strip separators, drop digits — so date_of_birth, dateOfBirth,
-  // DATE-OF-BIRTH, date_of_birth_2 all collapse to "dateofbirth".
-  return key.toLowerCase().replace(/[-_]/g, '').replace(/\d+$/, '');
-}
-
-const CANONICAL_FORBIDDEN: ReadonlySet<string> = new Set(
-  FORBIDDEN_PUBLIC_KEYS.map(canonicalize),
-);
-
-const CANONICAL_ALLOWED: ReadonlySet<string> = new Set(
-  Array.from(ALLOWED_OVERRIDES).map(canonicalize),
-);
+import {
+  findPrivacyViolations,
+  PRIVACY_GUARD_FORBIDDEN_CLAIM_ERROR,
+} from './privacy/privacy-guard.ts';
 
 export interface PrivacyGuardViolation {
   readonly path: string;
   readonly key: string;
 }
 
-export interface PrivacyGuardOptions {
-  /**
-   * Extra keys that should be tolerated even if they look like PII. Use only
-   * when the surface is non-public (internal logs) or when the field is a
-   * policy descriptor (e.g. `age_threshold`).
-   */
-  readonly allowedKeys?: readonly string[];
-  /**
-   * When true, the walker descends into arrays. Defaults to true.
-   */
-  readonly walkArrays?: boolean;
-}
+/**
+ * Lista preservada por compatibilidade — consumidores antigos que
+ * importam diretamente este array continuam funcionando.
+ *
+ * **Não estenda este array.** A fonte canônica das chaves proibidas
+ * vive em `./privacy/forbidden-claims.ts` (`CORE_FORBIDDEN_KEYS` +
+ * `CONTENT_FORBIDDEN_KEYS`).
+ */
+export const FORBIDDEN_PUBLIC_KEYS = [
+  'birthdate',
+  'date_of_birth',
+  'dob',
+  'idade',
+  'age',
+  'exact_age',
+  'document',
+  'cpf',
+  'rg',
+  'passport',
+  'name',
+  'full_name',
+  'email',
+  'phone',
+  'selfie',
+  'face',
+  'raw_id',
+  'address',
+] as const;
 
+/**
+ * Encontra chaves proibidas em payload público. Delega para o guard
+ * canônico no perfil `public_api_response` — comportamento estritamente
+ * igual ou mais restritivo que a versão original (nunca menos).
+ */
 export function findForbiddenPublicPayloadKeys(
   payload: unknown,
   basePath = '$',
-  options: PrivacyGuardOptions = {},
 ): PrivacyGuardViolation[] {
-  const violations: PrivacyGuardViolation[] = [];
-  const localAllowed = new Set<string>(CANONICAL_ALLOWED);
-  for (const k of options.allowedKeys ?? []) {
-    localAllowed.add(canonicalize(k));
-  }
-  const walkArrays = options.walkArrays !== false;
-
-  function visit(value: unknown, path: string): void {
-    if (Array.isArray(value)) {
-      if (!walkArrays) return;
-      value.forEach((item, index) => visit(item, `${path}[${index}]`));
-      return;
-    }
-
-    if (!value || typeof value !== 'object') return;
-
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      const canon = canonicalize(key);
-      if (
-        !localAllowed.has(canon) &&
-        CANONICAL_FORBIDDEN.has(canon)
-      ) {
-        violations.push({ path: `${path}.${key}`, key });
-      }
-      visit(child, `${path}.${key}`);
-    }
-  }
-
-  visit(payload, basePath);
-  return violations;
+  return findPrivacyViolations(payload, 'public_api_response', basePath).map(
+    (v) => ({ path: v.path, key: v.key }),
+  );
 }
 
-export function assertPublicPayloadHasNoPii(
-  payload: unknown,
-  options: PrivacyGuardOptions = {},
-): void {
-  const violations = findForbiddenPublicPayloadKeys(payload, '$', options);
+/**
+ * Lança `Error` quando o payload contém chaves PII-like.
+ *
+ * Mantém a mesma forma de erro da versão original (`Error` cru, não
+ * `PrivacyGuardForbiddenClaimError`) para evitar quebra em consumidores
+ * que ainda usam `try { ... } catch (e) { e.message... }`. O reason code
+ * canônico (`AGEKEY_PRIVACY_GUARD_FORBIDDEN_CLAIM`) é incluído na
+ * mensagem para correlação.
+ */
+export function assertPublicPayloadHasNoPii(payload: unknown): void {
+  const violations = findForbiddenPublicPayloadKeys(payload);
   if (violations.length > 0) {
     const detail = violations.map((v) => v.path).join(', ');
-    throw new Error(`Public payload contains forbidden PII-like keys: ${detail}`);
+    throw new Error(
+      `Public payload contains forbidden PII-like keys [${PRIVACY_GUARD_FORBIDDEN_CLAIM_ERROR}]: ${detail}`,
+    );
   }
 }
 
+/**
+ * Redação de token para exibição em logs/admin.
+ *
+ * Não usa o guard canônico — token JWT em si não é PII (não contém
+ * dados do usuário); a redação é apenas para evitar vazamento da
+ * assinatura completa em logs.
+ */
 export function redactTokenForDisplay(token: string): string {
   if (token.length <= 24) return '***';
   return `${token.slice(0, 12)}...${token.slice(-12)}`;

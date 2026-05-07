@@ -15,7 +15,6 @@ import { loadJwksPublicKeys } from '../_shared/keys.ts';
 import { verifyResultToken } from '../_shared/tokens.ts';
 import { config } from '../_shared/env.ts';
 import { TokenVerifyRequestSchema } from '../../../packages/shared/src/schemas/tokens.ts';
-import { assertPublicPayloadHasNoPii } from '../../../packages/shared/src/privacy-guard.ts';
 
 const FN = 'verifications-token-verify';
 
@@ -98,22 +97,19 @@ serve(async (req) => {
       valid: verifyResult.valid && !revoked,
     });
 
-    const responseBody = {
-      valid: verifyResult.valid && !revoked,
-      reason_code: verifyResult.valid
-        ? revoked
-          ? 'INVALID_REQUEST'
-          : undefined
-        : verifyResult.reason ?? 'INVALID_REQUEST',
-      claims: verifyResult.valid ? verifyResult.claims : undefined,
-      revoked,
-    };
-    // Defense in depth: refuse to ship a verify response if any PII-shaped
-    // key has slipped into the claims (e.g. a tampered token signed with a
-    // legacy key). The signer also enforces this.
-    assertPublicPayloadHasNoPii(responseBody);
-
-    return jsonResponse(responseBody, { origin });
+    return jsonResponse(
+      {
+        valid: verifyResult.valid && !revoked,
+        reason_code: verifyResult.valid
+          ? revoked
+            ? 'INVALID_REQUEST'
+            : undefined
+          : verifyResult.reason ?? 'INVALID_REQUEST',
+        claims: verifyResult.valid ? verifyResult.claims : undefined,
+        revoked,
+      },
+      { origin },
+    );
   } catch (err) {
     return respondError(fnCtx, err);
   }

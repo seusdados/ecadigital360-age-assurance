@@ -1,101 +1,78 @@
-// POST /v1/parental-consent/:id/confirm — finalise the consent flow.
+// POST /v1/parental-consent/:consent_request_id/confirm
 //
-// Validates OTP, computes the canonical envelope, persists parental_consents,
-// mints a result_token (consent claim shape), inserts the parental_consent_token
-// row and (via the SQL trigger) enqueues the matching webhook.
-//
-// Reference: docs/modules/parental-consent/api.md §POST /:id/confirm
+// Body: { guardian_panel_token, otp, decision: 'approve'|'deny',
+//         consent_text_version_id }.
+// Ação: valida OTP, cria parental_consents, emite parental_consent_token
+// se aprovado, dispara webhook via trigger fan_out_parental_consent_webhooks.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { db } from '../_shared/db.ts';
 import {
-  ConsentConfirmRequestSchema,
-  ConsentConfirmResponseSchema,
-  CONSENT_FEATURE_FLAGS,
-  REASON_CODES,
-  assertPublicPayloadHasNoPii,
-  envelopeToConsentTokenClaims,
-  readConsentFeatureFlag,
-} from '../../../packages/shared/src/index.ts';
-import { authenticateApiKey } from '../_shared/auth.ts';
-import { db, setTenantContext } from '../_shared/db.ts';
-import {
-  ForbiddenError,
-  InvalidRequestError,
-  NotFoundError,
   jsonResponse,
   respondError,
+  InvalidRequestError,
+  InternalError,
+  ForbiddenError,
+  NotFoundError,
 } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
-import { checkRateLimit } from '../_shared/rate-limit.ts';
-import { loadActiveSigningKey } from '../_shared/keys.ts';
-import { signJwsClaims } from '../../../packages/shared/src/jws.ts';
 import {
-  buildConsentEnvelopeFromRows,
-  computeConsentEnvelopePayloadHash,
-  consentEnvelopeAuditDiff,
-} from '../_shared/consent-envelope.ts';
+  hashPanelToken,
+  constantTimeEqualString,
+} from '../_shared/parental-consent/panel-token.ts';
+import {
+  hashOtp,
+  constantTimeEqual,
+} from '../_shared/parental-consent/otp.ts';
+import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import { issueParentalConsentToken } from '../_shared/parental-consent/consent-token.ts';
+import { loadActiveSigningKey } from '../_shared/keys.ts';
 import { config } from '../_shared/env.ts';
+import {
+  ParentalConsentConfirmRequestSchema,
+  type ParentalConsentConfirmResponse,
+} from '../../../packages/shared/src/schemas/parental-consent.ts';
+import { CANONICAL_REASON_CODES } from '../../../packages/shared/src/taxonomy/reason-codes.ts';
+import { assertPayloadSafe } from '../../../packages/shared/src/privacy/index.ts';
 
 const FN = 'parental-consent-confirm';
 
-function moduleEnabled(): boolean {
-  return readConsentFeatureFlag(
-    {
-      AGEKEY_PARENTAL_CONSENT_ENABLED: Deno.env.get(
-        CONSENT_FEATURE_FLAGS.ENABLED,
-      ),
-    },
-    CONSENT_FEATURE_FLAGS.ENABLED,
-  );
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const buf = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(value),
-  );
-  let hex = '';
-  for (const b of new Uint8Array(buf)) hex += b.toString(16).padStart(2, '0');
-  return hex;
+function extractRequestId(url: URL): string | null {
+  const parts = url.pathname.split('/').filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const seg = parts[i] ?? '';
+    if (/^[0-9a-f-]{36}$/i.test(seg)) return seg;
+  }
+  return null;
 }
 
 serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
+
   const trace_id = newTraceId();
-  const fnCtx = { fn: FN, trace_id, origin: req.headers.get('origin') };
+  const origin = req.headers.get('origin');
+  const fnCtx = { fn: FN, trace_id, origin };
   const t0 = Date.now();
 
   if (req.method !== 'POST') {
     return respondError(fnCtx, new InvalidRequestError('Method not allowed'));
   }
-  if (!moduleEnabled()) {
-    return respondError(
-      fnCtx,
-      new ForbiddenError('Parental consent module is disabled'),
-    );
-  }
-
-  const url = new URL(req.url);
-  const consentRequestId = url.pathname.split('/').filter(Boolean).pop();
-  if (!consentRequestId || !/^[0-9a-f-]{36}$/.test(consentRequestId)) {
-    return respondError(
-      fnCtx,
-      new InvalidRequestError('Invalid consent_request_id in path'),
-    );
-  }
 
   try {
-    const client = db();
-    const principal = await authenticateApiKey(client, req);
-    await setTenantContext(client, principal.tenantId);
-    await checkRateLimit(
-      client,
-      principal.apiKeyHash,
-      'parental-consent-confirm',
-      principal.tenantId,
-    );
+    const flags = readParentalConsentFlags();
+    if (!flags.enabled) {
+      throw new ForbiddenError(
+        'AgeKey Consent module is disabled (AGEKEY_PARENTAL_CONSENT_ENABLED=false).',
+      );
+    }
+
+    const url = new URL(req.url);
+    const requestId = extractRequestId(url);
+    if (!requestId) {
+      throw new InvalidRequestError('Invalid consent_request_id');
+    }
 
     let body: unknown;
     try {
@@ -103,7 +80,7 @@ serve(async (req) => {
     } catch {
       throw new InvalidRequestError('Invalid JSON body');
     }
-    const parsed = ConsentConfirmRequestSchema.safeParse(body);
+    const parsed = ParentalConsentConfirmRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new InvalidRequestError(
         'Invalid request body',
@@ -112,357 +89,225 @@ serve(async (req) => {
     }
     const input = parsed.data;
 
-    const reqRow = await client
+    const client = db();
+
+    // Valida panel token.
+    const expectedHash = await hashPanelToken(input.guardian_panel_token);
+    const { data: reqRow, error: reqErr } = await client
       .from('parental_consent_requests')
       .select(
-        'id, tenant_id, application_id, status, expires_at, resource, scope, purpose_codes, data_categories, risk_tier, subject_ref_hmac, verification_session_id, policy_id, policy_version',
+        'id, tenant_id, application_id, status, policy_id, policy_version_id, consent_text_version_id, purpose_codes, data_categories, guardian_panel_token_hash, guardian_panel_token_expires_at, expires_at',
       )
-      .eq('id', consentRequestId)
+      .eq('id', requestId)
       .maybeSingle();
-    if (reqRow.error) throw reqRow.error;
-    if (!reqRow.data) throw new NotFoundError('Consent request not found');
-    if (reqRow.data.tenant_id !== principal.tenantId) {
-      throw new ForbiddenError('Consent request belongs to another tenant');
+    if (reqErr || !reqRow) throw new NotFoundError('consent_request not found');
+    if (
+      !constantTimeEqualString(
+        expectedHash,
+        reqRow.guardian_panel_token_hash as string,
+      )
+    ) {
+      throw new ForbiddenError('Invalid guardian_panel_token');
     }
-    if (new Date(reqRow.data.expires_at).getTime() < Date.now()) {
-      throw new InvalidRequestError('Consent request has expired');
+    if (
+      reqRow.status === 'approved' ||
+      reqRow.status === 'denied' ||
+      reqRow.status === 'revoked' ||
+      reqRow.status === 'expired'
+    ) {
+      throw new ForbiddenError(
+        `consent_request already in terminal state: ${reqRow.status}`,
+      );
+    }
+    if ((reqRow.consent_text_version_id as string) !== input.consent_text_version_id) {
+      throw new InvalidRequestError(
+        'consent_text_version_id mismatch — guardian must confirm the version that was displayed',
+      );
     }
 
-    // Most recent guardian verification for this request.
-    const gvRow = await client
+    // Carrega guardian_verification ativo + guardian_contact.
+    const { data: gvRow, error: gvErr } = await client
       .from('guardian_verifications')
       .select(
-        'id, guardian_contact_id, method, assurance_level, otp_digest, otp_attempts, otp_expires_at, decision',
+        'id, otp_hash, attempts, max_attempts, expires_at, consumed_at, guardian_contact_id',
       )
-      .eq('consent_request_id', consentRequestId)
+      .eq('consent_request_id', reqRow.id)
+      .is('consumed_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (gvRow.error) throw gvRow.error;
-    if (!gvRow.data)
-      throw new InvalidRequestError(
-        'Guardian channel has not been started for this request',
-      );
+    if (gvErr || !gvRow) {
+      throw new ForbiddenError('No active guardian verification — start one first');
+    }
+    if (new Date(gvRow.expires_at as string).getTime() < Date.now()) {
+      throw new ForbiddenError('OTP expired');
+    }
+    if ((gvRow.attempts as number) >= (gvRow.max_attempts as number)) {
+      throw new ForbiddenError('Max OTP attempts exceeded');
+    }
 
-    const gcRow = await client
+    // Verifica OTP.
+    const otpHash = await hashOtp(input.otp, reqRow.id as string);
+    const ok = constantTimeEqual(otpHash, gvRow.otp_hash as string);
+    if (!ok) {
+      await client
+        .from('guardian_verifications')
+        .update({ attempts: (gvRow.attempts as number) + 1 })
+        .eq('id', gvRow.id);
+      throw new ForbiddenError('Invalid OTP');
+    }
+
+    // OTP consumido.
+    await client
+      .from('guardian_verifications')
+      .update({ consumed_at: new Date().toISOString() })
+      .eq('id', gvRow.id);
+
+    // Carrega contact_hmac.
+    const { data: gcRow, error: gcErr } = await client
       .from('guardian_contacts')
-      .select('id, guardian_ref_hmac, contact_type')
-      .eq('id', gvRow.data.guardian_contact_id)
-      .maybeSingle();
-    if (gcRow.error) throw gcRow.error;
-    if (!gcRow.data)
-      throw new InvalidRequestError(
-        'Guardian contact for this verification was not found',
-      );
+      .select('id, contact_hmac')
+      .eq('id', gvRow.guardian_contact_id)
+      .single();
+    if (gcErr || !gcRow) throw new InternalError('guardian_contact missing');
 
-    if (
-      gvRow.data.otp_expires_at == null ||
-      new Date(gvRow.data.otp_expires_at).getTime() < Date.now()
-    ) {
-      await client
-        .from('guardian_verifications')
-        .update({
-          decision: 'denied',
-          reason_code: REASON_CODES.CONSENT_OTP_EXPIRED,
-        })
-        .eq('id', gvRow.data.id);
-      throw new InvalidRequestError('OTP expired');
+    // Resolve policy version atual.
+    const { data: policyRow } = await client
+      .from('policies')
+      .select('id, slug, age_threshold, current_version')
+      .eq('id', reqRow.policy_id)
+      .single();
+    const { data: appRow } = await client
+      .from('applications')
+      .select('id, slug')
+      .eq('id', reqRow.application_id)
+      .single();
+
+    if (!policyRow || !appRow) {
+      throw new InternalError('Failed to load policy/application');
     }
 
-    const expectedDigest = await sha256Hex(
-      `${gcRow.data.guardian_ref_hmac}|${input.otp}`,
-    );
-    const otpOk =
-      typeof gvRow.data.otp_digest === 'string' &&
-      expectedDigest === gvRow.data.otp_digest;
+    // Decide reason_code.
+    const decisionStr =
+      input.decision === 'approve' ? ('granted' as const) : ('denied' as const);
+    const reasonCode =
+      decisionStr === 'granted'
+        ? CANONICAL_REASON_CODES.CONSENT_APPROVED
+        : CANONICAL_REASON_CODES.CONSENT_DENIED;
 
-    if (!otpOk) {
-      await client
-        .from('guardian_verifications')
-        .update({
-          otp_attempts: (gvRow.data.otp_attempts ?? 0) + 1,
-          decision: 'denied',
-          reason_code: REASON_CODES.CONSENT_OTP_INVALID,
-        })
-        .eq('id', gvRow.data.id);
-      throw new InvalidRequestError('OTP invalid');
+    // Insere parental_consent (append-only).
+    const expiresAt = new Date(
+      Date.now() + flags.consentDefaultExpiryDays * 86_400_000,
+    ).toISOString();
+    const grantedAt = decisionStr === 'granted' ? new Date().toISOString() : null;
+
+    const { data: pcRow, error: pcErr } = await client
+      .from('parental_consents')
+      .insert({
+        tenant_id: reqRow.tenant_id,
+        application_id: reqRow.application_id,
+        consent_request_id: reqRow.id,
+        policy_id: reqRow.policy_id,
+        policy_version_id: reqRow.policy_version_id,
+        consent_text_version_id: reqRow.consent_text_version_id,
+        decision: decisionStr,
+        reason_code: reasonCode,
+        consent_assurance_level: 'AAL-C1',
+        purpose_codes: reqRow.purpose_codes,
+        data_categories: reqRow.data_categories,
+        guardian_contact_hmac: gcRow.contact_hmac,
+        granted_at: grantedAt,
+        expires_at: expiresAt,
+      })
+      .select('id')
+      .single();
+    if (pcErr || !pcRow) {
+      throw pcErr ?? new InternalError('Failed to insert parental_consent');
     }
 
-    // Resolve the consent text version.
-    const ctv = await client
-      .from('consent_text_versions')
-      .select(
-        'id, tenant_id, version, body_hash, status, purpose_codes, data_categories',
-      )
-      .eq('id', input.consent_text_version_id)
-      .maybeSingle();
-    if (ctv.error) throw ctv.error;
-    if (!ctv.data || ctv.data.tenant_id !== principal.tenantId) {
-      throw new InvalidRequestError(
-        'Consent text version not found for this tenant',
-      );
-    }
-    if (ctv.data.status !== 'published') {
-      throw new InvalidRequestError(
-        `Consent text version is ${ctv.data.status}`,
-      );
-    }
+    // Atualiza request status.
+    await client
+      .from('parental_consent_requests')
+      .update({
+        status: decisionStr === 'granted' ? 'approved' : 'denied',
+        decided_at: new Date().toISOString(),
+        reason_code: reasonCode,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', reqRow.id);
 
-    const consentTextHash = ctv.data.body_hash as string;
-    const proofHash = await sha256Hex(
-      [
-        reqRow.data.subject_ref_hmac,
-        gcRow.data.guardian_ref_hmac,
-        reqRow.data.resource,
-        consentTextHash,
-        Math.floor(Date.now() / 1000).toString(),
-      ].join('|'),
-    );
-
-    const acceptanceComplete =
-      input.accepted &&
-      input.declaration.guardian_responsibility_confirmed &&
-      input.declaration.understands_scope &&
-      input.declaration.understands_revocation;
-
-    // Build envelope first to get the deterministic decision.
-    const tokenTtl =
-      Number(Deno.env.get('AGEKEY_CONSENT_TOKEN_TTL_SECONDS') ?? '604800') ||
-      604800; // 7 days default
-
-    const provisionalEnvelope = buildConsentEnvelopeFromRows({
-      tenant_id: principal.tenantId,
-      application_id: principal.applicationId,
-      consent_request_id: reqRow.data.id,
-      parental_consent_id: null,
-      consent_token_id: null,
-      verification_session_id: reqRow.data.verification_session_id,
-      policy:
-        reqRow.data.policy_id != null && reqRow.data.policy_version != null
-          ? {
-              id: reqRow.data.policy_id,
-              slug: 'parental-consent',
-              version: reqRow.data.policy_version,
-            }
-          : null,
-      resource: reqRow.data.resource,
-      scope: reqRow.data.scope,
-      purpose_codes: reqRow.data.purpose_codes,
-      data_categories: reqRow.data.data_categories,
-      risk_tier: reqRow.data.risk_tier,
-      subject_ref_hmac: reqRow.data.subject_ref_hmac,
-      guardian_ref_hmac: gcRow.data.guardian_ref_hmac,
-      guardian_method: gvRow.data.method,
-      guardian_assurance: gvRow.data.assurance_level ?? 'low',
-      guardian_verified: true,
-      consent_text_hash: acceptanceComplete ? consentTextHash : null,
-      proof_hash: acceptanceComplete ? proofHash : null,
-      acceptance_complete: acceptanceComplete,
-      token_ttl_seconds: tokenTtl,
-    });
-
-    let parentalConsentId: string | null = null;
-    let consentTokenId: string | null = null;
-    let signedJwt: string | null = null;
-    let kid: string | null = null;
-
-    if (provisionalEnvelope.decision === 'approved') {
-      const insertConsent = await client
-        .from('parental_consents')
+    // Emite token quando aprovado.
+    let tokenOut: ParentalConsentConfirmResponse['token'] = null;
+    if (decisionStr === 'granted') {
+      const signingKey = await loadActiveSigningKey(client);
+      // Cria parental_consent_token row para FK do JTI.
+      const tokenExpIso = new Date(
+        Date.now() + flags.consentTokenTtlSeconds * 1000,
+      ).toISOString();
+      const { data: pctRow, error: pctErr } = await client
+        .from('parental_consent_tokens')
         .insert({
-          tenant_id: principal.tenantId,
-          consent_request_id: reqRow.data.id,
-          verification_session_id: reqRow.data.verification_session_id,
-          guardian_verification_id: gvRow.data.id,
-          consent_text_version_id: ctv.data.id,
-          application_id: principal.applicationId,
-          policy_id: reqRow.data.policy_id,
-          policy_version: reqRow.data.policy_version,
-          subject_ref_hmac: reqRow.data.subject_ref_hmac,
-          guardian_ref_hmac: gcRow.data.guardian_ref_hmac,
-          resource: reqRow.data.resource,
-          scope: reqRow.data.scope,
-          purpose_codes: reqRow.data.purpose_codes,
-          data_categories: reqRow.data.data_categories,
-          risk_tier: reqRow.data.risk_tier,
-          method: gvRow.data.method,
-          assurance_level: gvRow.data.assurance_level ?? 'low',
-          status: 'active',
-          consent_text_hash: consentTextHash,
-          proof_hash: proofHash,
-          issued_at: new Date(provisionalEnvelope.issued_at * 1000).toISOString(),
-          expires_at: new Date(
-            provisionalEnvelope.expires_at * 1000,
-          ).toISOString(),
+          tenant_id: reqRow.tenant_id,
+          application_id: reqRow.application_id,
+          parental_consent_id: pcRow.id,
+          kid: signingKey.kid,
+          expires_at: tokenExpIso,
         })
-        .select('id')
+        .select('jti')
         .single();
-      if (insertConsent.error) throw insertConsent.error;
-      parentalConsentId = insertConsent.data.id;
-
-      // Sign the consent token.
-      const signing = await loadActiveSigningKey(client);
-      kid = signing.kid;
-      const tokenJti = crypto.randomUUID();
-      consentTokenId = tokenJti;
-      const finalEnvelope = buildConsentEnvelopeFromRows({
-        ...provisionalEnvelope,
-        // re-cast subset that buildConsentEnvelopeFromRows expects
-        tenant_id: provisionalEnvelope.tenant_id,
-        application_id: provisionalEnvelope.application_id,
-        consent_request_id: provisionalEnvelope.consent_request_id,
-        parental_consent_id: parentalConsentId,
-        consent_token_id: tokenJti,
-        verification_session_id: provisionalEnvelope.verification_session_id,
-        policy: provisionalEnvelope.policy,
-        resource: provisionalEnvelope.resource,
-        scope: provisionalEnvelope.scope,
-        purpose_codes: provisionalEnvelope.purpose_codes,
-        data_categories: provisionalEnvelope.data_categories,
-        risk_tier: provisionalEnvelope.risk_tier,
-        subject_ref_hmac: provisionalEnvelope.subject_ref_hmac,
-        guardian_ref_hmac: provisionalEnvelope.guardian_ref_hmac,
-        guardian_method: provisionalEnvelope.guardian_verification_method,
-        guardian_assurance: provisionalEnvelope.assurance_level,
-        guardian_verified: true,
-        consent_text_hash: consentTextHash,
-        proof_hash: proofHash,
-        acceptance_complete: true,
-        token_ttl_seconds: tokenTtl,
-        now_seconds: provisionalEnvelope.issued_at,
+      if (pctErr || !pctRow) {
+        throw pctErr ?? new InternalError('Failed to insert parental_consent_token');
+      }
+      const issued = await issueParentalConsentToken({
+        tenantId: reqRow.tenant_id as string,
+        applicationId: reqRow.application_id as string,
+        applicationSlug: appRow.slug as string,
+        parentalConsentId: pcRow.id as string,
+        policyId: policyRow.id as string,
+        policySlug: policyRow.slug as string,
+        policyVersion: policyRow.current_version as number,
+        consentTextVersionId: reqRow.consent_text_version_id as string,
+        purposeCodes: reqRow.purpose_codes as string[],
+        dataCategories: reqRow.data_categories as string[],
+        consentAssuranceLevel: 'AAL-C1',
+        signingKey,
+        issuer: config.issuer(),
+        jti: pctRow.jti as string,
+        ttlSeconds: flags.consentTokenTtlSeconds,
+        reasonCode,
+        decisionId: pcRow.id as string,
       });
-      const claims = envelopeToConsentTokenClaims(finalEnvelope, {
-        iss: config.issuer(),
-        aud: principal.applicationSlug,
-        jti: tokenJti,
-      });
-      signedJwt = await signJwsClaims(
-        claims as unknown as Record<string, unknown>,
-        signing,
-        'agekey-parental-consent+jwt',
-      );
-
-      const tokenHash = await sha256Hex(signedJwt);
-      const insTok = await client.from('parental_consent_tokens').insert({
-        jti: tokenJti,
-        tenant_id: principal.tenantId,
-        parental_consent_id: parentalConsentId,
-        token_type: 'agekey_jws',
-        token_hash: tokenHash,
-        audience: principal.applicationSlug,
-        kid,
-        issued_at: new Date(finalEnvelope.issued_at * 1000).toISOString(),
-        expires_at: new Date(finalEnvelope.expires_at * 1000).toISOString(),
-        status: 'active',
-      });
-      if (insTok.error) throw insTok.error;
-
-      await client
-        .from('guardian_verifications')
-        .update({
-          decision: 'approved',
-          reason_code: REASON_CODES.CONSENT_GRANTED,
-          verified_at: new Date().toISOString(),
-        })
-        .eq('id', gvRow.data.id);
-
-      await client
-        .from('parental_consent_requests')
-        .update({
-          status: 'approved',
-          decision: 'approved',
-          reason_code: REASON_CODES.CONSENT_GRANTED,
-        })
-        .eq('id', reqRow.data.id);
-
-      const payloadHash = await computeConsentEnvelopePayloadHash(finalEnvelope);
-      const auditDiff = consentEnvelopeAuditDiff(finalEnvelope, payloadHash);
-      await client.from('audit_events').insert({
-        tenant_id: principal.tenantId,
-        actor_type: 'system',
-        action: 'parental_consent.completed',
-        resource_type: 'parental_consent',
-        resource_id: parentalConsentId,
-        diff_json: auditDiff,
-      });
-    } else {
-      // Denied / needs_review / blocked_by_policy / pending — transition the
-      // request row but do not mint a token.
-      const newStatus = (() => {
-        switch (provisionalEnvelope.decision) {
-          case 'denied':
-            return 'denied';
-          case 'needs_review':
-            return 'under_review';
-          case 'blocked_by_policy':
-            return 'blocked_by_policy';
-          default:
-            return 'pending_verification';
-        }
-      })();
-      await client
-        .from('parental_consent_requests')
-        .update({
-          status: newStatus,
-          decision: provisionalEnvelope.decision,
-          reason_code: provisionalEnvelope.reason_code,
-        })
-        .eq('id', reqRow.data.id);
+      tokenOut = {
+        jwt: issued.jwt,
+        jti: issued.jti,
+        expires_at: issued.expiresAt,
+        kid: issued.kid,
+      };
     }
 
-    const responseBody = {
-      consent_request_id: reqRow.data.id,
-      decision: provisionalEnvelope.decision,
-      status:
-        provisionalEnvelope.decision === 'approved'
-          ? ('approved' as const)
-          : provisionalEnvelope.decision === 'denied'
-            ? ('denied' as const)
-            : provisionalEnvelope.decision === 'needs_review'
-              ? ('under_review' as const)
-              : provisionalEnvelope.decision === 'blocked_by_policy'
-                ? ('blocked_by_policy' as const)
-                : ('pending_verification' as const),
-      reason_code: provisionalEnvelope.reason_code,
-      consent_token_id: consentTokenId,
-      parental_consent_id: parentalConsentId,
-      verification_session_id: reqRow.data.verification_session_id,
-      token:
-        signedJwt && consentTokenId && kid
-          ? {
-              jwt: signedJwt,
-              jti: consentTokenId,
-              issued_at: new Date(
-                provisionalEnvelope.issued_at * 1000,
-              ).toISOString(),
-              expires_at: new Date(
-                provisionalEnvelope.expires_at * 1000,
-              ).toISOString(),
-              kid,
-              token_type: 'agekey_jws' as const,
-            }
-          : null,
-      method: gvRow.data.method,
-      assurance_level: gvRow.data.assurance_level ?? 'low',
-      expires_at: new Date(provisionalEnvelope.expires_at * 1000).toISOString(),
-      pii_included: false as const,
-      content_included: false as const,
+    const response: ParentalConsentConfirmResponse = {
+      consent_request_id: reqRow.id as string,
+      parental_consent_id: pcRow.id as string,
+      status: decisionStr === 'granted' ? 'approved' : 'denied',
+      decision: decisionStr === 'granted' ? 'approved' : 'denied',
+      reason_code: reasonCode,
+      token: tokenOut,
     };
-    assertPublicPayloadHasNoPii(responseBody);
-    const validated = ConsentConfirmResponseSchema.parse(responseBody);
+
+    assertPayloadSafe(response, 'public_api_response');
 
     log.info('parental_consent_confirmed', {
       fn: FN,
       trace_id,
-      tenant_id: principal.tenantId,
-      consent_request_id: reqRow.data.id,
-      decision: provisionalEnvelope.decision,
-      reason_code: provisionalEnvelope.reason_code,
+      tenant_id: reqRow.tenant_id,
+      consent_request_id: reqRow.id,
+      decision: decisionStr,
+      reason_code: reasonCode,
       duration_ms: Date.now() - t0,
       status: 200,
     });
 
-    return jsonResponse(validated, { origin: fnCtx.origin });
+    return jsonResponse(response, { origin });
   } catch (err) {
     return respondError(fnCtx, err);
   }

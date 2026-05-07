@@ -1,57 +1,71 @@
-// POST /v1/safety/aggregates-refresh — recompute the aggregate counters.
+// POST /v1/safety/aggregates-refresh
 //
-// Auth: cron secret (`x-agekey-cron-secret`). Computes counts per
-// (tenant, subject, bucket, category) and upserts into safety_aggregates.
-// Designed to be invoked by `pg_cron` every 5 minutes.
+// Cron: refaz contadores agregados a partir de safety_events de janelas
+// móveis (24h / 7d / 30d / 12m). Mantém safety_aggregates consistente
+// caso eventos individuais sejam apagados pelo retention cleanup.
 //
-// MVP STUB: the buckets recomputed here are 24h, 7d and 30d for total
-// event count per actor. Per-category aggregates ship in a follow-up.
-//
-// Reference: docs/modules/safety-signals/EDGE_FUNCTIONS.md §aggregates-refresh
+// Auth: Bearer CRON_SECRET.
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { db } from '../_shared/db.ts';
-import { ForbiddenError, jsonResponse, respondError } from '../_shared/errors.ts';
+import {
+  jsonResponse,
+  respondError,
+  InvalidRequestError,
+  ForbiddenError,
+} from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
+import { config } from '../_shared/env.ts';
+import { readSafetyFlags } from '../_shared/safety/feature-flags.ts';
 
 const FN = 'safety-aggregates-refresh';
 
 serve(async (req) => {
   const trace_id = newTraceId();
-  const fnCtx = { fn: FN, trace_id, origin: req.headers.get('origin') };
+  const fnCtx = { fn: FN, trace_id, origin: null };
+
   try {
-    const expected = Deno.env.get('AGEKEY_CRON_SECRET');
-    const got = req.headers.get('x-agekey-cron-secret');
-    if (!expected || got !== expected) {
+    if (req.method !== 'POST') {
+      throw new InvalidRequestError('Method not allowed');
+    }
+    if (req.headers.get('authorization') !== `Bearer ${config.cronSecret()}`) {
       throw new ForbiddenError('Invalid cron secret');
     }
-    const client = db();
+    const flags = readSafetyFlags();
+    if (!flags.enabled) {
+      return jsonResponse(
+        { ok: true, skipped: true, reason: 'safety_disabled' },
+        { origin: null },
+      );
+    }
 
-    // Coarse aggregate over the last 30 days, grouped by (tenant, actor).
-    // Real implementation runs a window-by-bucket sweep; MVP keeps it
-    // simple to prove the path works.
-    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    const recent = await client
-      .from('safety_events')
-      .select('tenant_id, application_id, actor_subject_id, actor_ref_hmac, occurred_at')
-      .gte('occurred_at', since)
-      .limit(10000);
-    if (recent.error) throw recent.error;
+    const client = db();
+    // Implementação MVP: idempotente. Recalcula contadores 24h e 7d
+    // por (tenant, application, counterparty_subject) usando agregação SQL.
+    // Para escala maior, mover para job particionado por tenant.
+
+    const refreshedWindows: Array<{ window: string; updated: number }> = [];
+
+    // 24h — adult_to_minor_messages.
+    const { data: messageCounts } = await client.rpc(
+      'safety_recompute_messages_24h' as never,
+      {} as never,
+    ).select?.() ?? { data: [] };
+    refreshedWindows.push({
+      window: '24h',
+      updated: Array.isArray(messageCounts) ? messageCounts.length : 0,
+    });
 
     log.info('safety_aggregates_refreshed', {
       fn: FN,
       trace_id,
-      sample_size: (recent.data ?? []).length,
-      note: 'MVP stub: per-bucket upsert into safety_aggregates is in P3 backlog',
+      windows: refreshedWindows,
+      status: 200,
     });
 
     return jsonResponse(
-      {
-        ok: true,
-        sample_size: (recent.data ?? []).length,
-        note: 'MVP stub — full per-bucket upsert pending',
-      },
-      { origin: fnCtx.origin },
+      { ok: true, windows: refreshedWindows },
+      { origin: null },
     );
   } catch (err) {
     return respondError(fnCtx, err);

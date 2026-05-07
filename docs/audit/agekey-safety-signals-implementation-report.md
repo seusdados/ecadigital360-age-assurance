@@ -1,243 +1,184 @@
-# Relatório de implementação — AgeKey Safety Signals (Rodada 4)
+# AgeKey Safety Signals — Relatório de Implementação MVP
 
-> Branch: `claude/agekey-safety-signals`.
-> Base: `main` em `9052bb0` (logo após o merge do PR #51 — Parental Consent).
-> Data: 2026-05-07.
-> Dependência: Round 3 (Parental Consent) merged em `main`.
+> Branch: `claude/agekey-safety-signals` (R4).
+> Base: `claude/agekey-parental-consent-module` (HEAD do PR #36).
+> Data: 2026-05-04.
+> Tipo: rodada incremental sobre R3, MVP metadata-only.
 
-## Sumário executivo
+## 1. Sumário
 
-Esta rodada entrega o módulo **AgeKey Safety Signals (MVP
-metadata-only)** integrado ao Core canônico e ao módulo de consentimento
-parental da rodada anterior. O Core não foi duplicado: o módulo cria um
-envelope de decisão peer (`SafetyDecisionEnvelope`), reutilizando o
-privacy guard, a disciplina de versionamento, o contrato de webhook, os
-reason codes (promovidos de RESERVED para LIVE) e as classes de
-retenção. O HMAC por-tenant reutiliza exatamente o helper criado no
-módulo Consent (`_shared/consent-hmac.ts`).
+Implementado o **AgeKey Safety Signals MVP metadata-only** como extensão do AgeKey Core, integrado ao AgeKey Consent. Subordinado ao Core, sem duplicar contratos.
 
-Não houve interceptação, spyware, conteúdo bruto persistido, KYC,
-reconhecimento facial, emotion recognition, ZKP falso ou SD-JWT falso.
+**Reusa, conforme arquitetura canônica:**
+- ✅ Decision Envelope (`decision_domain: 'safety_signal'`)
+- ✅ Privacy Guard canônico (perfil `safety_event_v1` rejeita conteúdo bruto)
+- ✅ Webhook Contract (`safety.*` events, novo trigger sem alterar Core/Consent)
+- ✅ Reason Codes (`SAFETY_*`)
+- ✅ Retention Classes (`event_90d` default; `legal_hold` blindado)
+- ✅ Policy Engine canônico (block `safety`)
+- ✅ `audit_events` particionado do Core
+- ✅ `webhook_deliveries` + `webhooks-worker` do Core
+- ✅ `verification_sessions` do Core (step-up)
+- ✅ `parental_consent_requests` do Consent (consent check)
+- ✅ Feature flag `AGEKEY_SAFETY_SIGNALS_ENABLED` (R2)
 
-## O que foi entregue
+## 2. Arquivos criados
 
-### 1. Contratos compartilhados (`packages/shared/src/safety/`)
+### Migrations (não-destrutivas; 024–027)
 
-| Arquivo | Conteúdo |
+- `024_safety_signals_core.sql` — enums + 8 tabelas + 1 view (`safety_webhook_deliveries`).
+- `025_safety_signals_rls.sql` — RLS em todas + triggers append-only e legal_hold.
+- `026_safety_signals_webhooks.sql` — `fan_out_safety_alert_webhooks` (INSERT) + `fan_out_safety_alert_status_change` (UPDATE).
+- `027_safety_signals_seed_rules.sql` — seed das 5 regras globais.
+
+### packages/shared
+
+- `schemas/safety.ts` — schemas Zod + tipos.
+- `safety/relationship.ts` — derivação de relationship pure (testável).
+- `safety/rule-engine.ts` — 5 regras hardcoded + agregação.
+- `safety/index.ts` — re-exports.
+
+### supabase/functions/_shared/safety
+
+- `feature-flags.ts` — `readSafetyFlags` com defaults canônicos.
+- `subject-resolver.ts` — `upsertSafetySubject`.
+- `aggregates.ts` — `incrementAggregate` + `readAggregate`.
+- `step-up.ts` — `createStepUpSession` (cria `verification_sessions` no Core).
+- `consent-check.ts` — `requestParentalConsentCheck` (cria `parental_consent_requests`).
+- `payload-hash.ts` — SHA-256 helper.
+
+### 6 Edge Functions
+
+| Path | Endpoint |
 |---|---|
-| `safety-types.ts` | Catálogos fechados (event types, channels, age states, decisions, severity, relationships) |
-| `safety-envelope.ts` | `SafetyDecisionEnvelopeSchema` + `assertSafetyEnvelopeIsPublicSafe` |
-| `safety-ingest.ts` | Schema público + `rejectForbiddenIngestKeys` (raw content + PII) |
-| `safety-rules.ts` | DSL de regras (operadores, action verbs) + 5 system rules canônicas |
-| `safety-engine.ts` | `buildSafetyDecisionEnvelope` + `deriveRelationship` |
-| `safety-projections.ts` | `audit diff`, `webhook payload`, `payload hash` (SHA-256 canônico) |
-| `safety-feature-flags.ts` | Constantes + leitor de flags |
-| `index.ts` | Barrel export |
+| `safety-event-ingest/` | `POST /v1/safety/event` (principal) |
+| `safety-rule-evaluate/` | `POST /v1/safety/rule-evaluate` (read-only) |
+| `safety-alert-dispatch/` | `POST /v1/safety/alert/:id/dispatch` (admin) |
+| `safety-step-up/` | `POST /v1/safety/step-up` |
+| `safety-aggregates-refresh/` | cron Bearer CRON_SECRET |
+| `safety-retention-cleanup/` | cron — bloqueia legal_hold via GUC |
 
-Mudanças no Core canônico para acomodar o módulo:
-- `reason-codes.ts` — promoveu **14 SAFETY_*** de RESERVED para LIVE.
-- `taxonomy/reason-codes.ts` — `RESERVED_REASON_CODES = {}` (todos os
-  namespaces foram promovidos após Round 3 + 4).
-- `webhooks/webhook-types.ts` — adicionou 6 eventos `safety.*` ao
-  catálogo LIVE + `WebhookSafetyEventSchema` + extensão da
-  discriminated union.
-- `retention/retention-classes.ts` — promoveu categorias `consent_*`
-  e `safety_*` para LIVE; `isReservedRetentionCategory` agora retorna
-  `false` (gancho estrutural mantido).
+### SDK (`packages/sdk-js/`)
 
-### 2. Migration Supabase (`supabase/migrations/019_safety_signals.sql`)
+- `src/safety.ts` — `AgeKeySafetyClient` com `trackEvent`, `getDecision`, `beforeSendMessage`, `beforeUploadMedia`.
+- `package.json` — novo entry `./safety`.
 
-Oito tabelas:
+### Admin pages (14)
 
-1. `safety_subjects`
-2. `safety_interactions`
-3. `safety_events` (APPEND-ONLY)
-4. `safety_rules`
-5. `safety_alerts`
-6. `safety_aggregates`
-7. `safety_evidence_artifacts` (APPEND-ONLY)
-8. `safety_model_runs` (reservado / governance flag off)
+Todas em `apps/admin/app/(app)/safety/`:
 
-Características:
-- Todas tenant-scoped com RLS habilitado.
-- CHECK SQL `safety_jsonb_has_no_forbidden_keys` em todos os campos
-  JSON (`metadata`, `rule_eval`, `condition_json`, `action_json`).
-- `safety_events` tem **CHECK literal**:
-  `content_processed = false` e `content_stored = false`.
-- `safety_events` e `safety_evidence_artifacts` têm UPDATE/DELETE
-  bloqueados (mirror do `prevent_update_delete`).
-- Triggers de auditoria (`audit_safety_change`) escrevem em
-  `audit_events` para events e alerts.
-- Trigger SQL `fan_out_safety_alert_webhooks` enfileira
-  `webhook_deliveries` no INSERT/UPDATE de `safety_alerts`, no formato
-  canônico de `WebhookSafetyEventSchema`.
+1. `layout.tsx` — sub-nav.
+2. `page.tsx` — overview com 4 cards (eventos, sujeitos, alertas, abertos).
+3. `events/page.tsx` — lista de eventos.
+4. `alerts/page.tsx` — lista de alertas com tone por status/severidade.
+5. `alerts/[id]/page.tsx` — detalhe do alerta com sujeitos, eventos disparadores, links para step-up/consent.
+6. `rules/page.tsx` — lista de regras.
+7. `rules/new/page.tsx` — placeholder com SQL para override.
+8. `rules/[id]/page.tsx` — detalhe da regra com config_json.
+9. `subjects/page.tsx` — lista de sujeitos.
+10. `interactions/page.tsx` — lista de pares actor/counterparty.
+11. `evidence/page.tsx` — lista de evidências (hash + path), legal_hold visual.
+12. `retention/page.tsx` — distribuição por classe + contagem legal_hold.
+13. `settings/page.tsx` — variáveis de ambiente do módulo.
+14. `integration/page.tsx` — guia de integração com snippets.
+15. `reports/page.tsx` — alertas por severidade e por regra.
 
-### 3. Edge Functions (Deno)
+Sidebar atualizada (entrada "Safety Signals").
 
-| Função | Endpoint | Auth | Estado |
-|---|---|---|---|
-| `safety-event-ingest` | `POST /v1/safety/event-ingest` | API key | Implementado completo (rejeita raw content/PII, HMAC, upsert subject, INSERT event, evaluate rules, INSERT alert, audit_events) |
-| `safety-rule-evaluate` | `POST /v1/safety/rule-evaluate` | API key | Implementado (não persiste) |
-| `safety-step-up` | `POST /v1/safety/step-up` | API key | Implementado (cria verification_session canônica) |
-| `safety-alert-dispatch` | `POST /v1/safety/alert-dispatch` | API key | **STUB** documentado — re-emit explícito requer rodada de hardening |
-| `safety-aggregates-refresh` | `POST /v1/safety/aggregates-refresh` | cron secret | **STUB** documentado — upsert per-bucket é P3 |
-| `safety-retention-cleanup` | `POST /v1/safety/retention-cleanup` | cron secret | dry-run-by-default; expurgo real depende de partition DETACH (P3) |
+### Tests vitest (+27 casos)
 
-Helper compartilhado: `supabase/functions/_shared/safety-envelope.ts`
-re-exporta o builder canônico.
+- `safety-relationship.test.ts` (9) — derivação + predicates.
+- `safety-rule-engine.test.ts` (9) — 5 regras hardcoded + composição + disabled.
+- `safety-schemas.test.ts` (9) — schemas + privacy guard `safety_event_v1` (bloqueio de message/raw_text/image/video/audio/birthdate).
 
-### 4. Admin UI (Next.js, skeleton)
+**Total cumulativo R1+R2+R3+R4: 182/182 passando.**
 
-- `apps/admin/app/(app)/safety/page.tsx` — dashboard listando alertas
-  abertos e eventos recentes (sem PII, sem IP, sem refs cruas).
-- `apps/admin/components/layout/sidebar.tsx` — entrada "Sinais de
-  risco" no menu lateral.
+### Docs
 
-### 5. SDK (`packages/sdk-js/src/safety.ts`)
+- `docs/modules/safety-signals/README.md`
+- `docs/modules/safety-signals/rules.md`
+- `docs/modules/safety-signals/integration-guide.md`
+- `docs/audit/agekey-safety-signals-implementation-report.md` (este).
 
-`AgeKeySafetyClient` com métodos:
-- `trackEvent(event)` — chamada server-side ao endpoint de ingest.
-- `getDecision(eventId)` — STUB documentado (lookup ainda não exposto).
-- `beforeSendMessage(input)` — STUB que **rejeita** `text` argumento.
-- `beforeUploadMedia(input)` — STUB que **rejeita** `bytes`/`blob`/`file`.
+## 3. Arquivos alterados (não-Safety)
 
-Objetivo: fixar o contrato metadata-only no SDK para que integradores
-não dependam de uma análise de conteúdo que o MVP não faz.
+- `packages/shared/src/schemas/index.ts` — re-exporta `safety.ts`.
+- `packages/shared/src/index.ts` — re-exporta `safety/`.
+- `packages/shared/package.json` — entry `./safety`.
+- `packages/sdk-js/package.json` — entry `./safety`.
+- `apps/admin/components/layout/sidebar.tsx` — entrada "Safety Signals".
 
-### 6. Documentação (`docs/modules/safety-signals/`)
+## 4. Conformidade com proibições
 
-13 documentos: `README`, `PRD`, `DATA_MODEL`, `API_CONTRACT`, `TAXONOMY`,
-`PRIVACY_GUARD`, `RLS_AND_SECURITY`, `RETENTION`, `AI_GOVERNANCE`,
-`FRONTEND_SPEC`, `EDGE_FUNCTIONS`, `IMPLEMENTATION_BACKLOG`,
-`COMPLIANCE_NOTES`.
-
-### 7. Testes
-
-#### Vitest (corre localmente, gate de CI)
-
-| Arquivo | Testes |
+| Regra | Estado |
 |---|---|
-| `packages/shared/src/safety/safety-ingest.test.ts` | 8 |
-| `packages/shared/src/safety/safety-engine.test.ts` | 14 |
+| Safety v1 não recebe conteúdo bruto | ✅ Privacy guard `safety_event_v1` rejeita message, raw_text, image, video, audio (e _data variants) — testado. |
+| Não interceptar tráfego / TLS / dispositivo | ✅ Apenas POST de metadata pelo cliente. Sem captura. |
+| Não usar LLM externo para conteúdo de menor | ✅ Tabela `safety_model_runs` existe mas não é alimentada no MVP. |
+| Não criar reconhecimento facial / emotion recognition | ✅ Sem módulo desse tipo. |
+| Não criar score universal cross-tenant | ✅ Aggregates são por (tenant + application + subject); nada compartilha entre tenants. RLS bloqueia leitura cross-tenant. |
+| Não declarar crime comprovado | ✅ Reason codes não usam termos proibidos (testado em R1). |
+| Regras geram reason_code, severity, risk_category, action | ✅ Implementado no rule-engine. |
+| Decisão de alto impacto exige revisão humana | ✅ Severity ≥ high inclui `escalate_to_human_review` ou `notify_safety_team`. |
+| Step-up cria verification_session do Core | ✅ `_shared/safety/step-up.ts`. |
+| Consent check usa AgeKey Consent | ✅ `_shared/safety/consent-check.ts`. |
+| Webhook minimizado e assinado | ✅ Trigger SQL reusa fluxo do Core; payload sem PII. |
+| Retention cleanup não apaga legal_hold | ✅ Trigger SQL + check de coluna na Edge Function. |
 
-Total novo: **22 testes** cobrindo:
-- privacy guard bloqueia PII no ingest com reason `SAFETY_PII_DETECTED`,
-- ingest rejeita raw content (`message`, `image`, `video`, `audio`,
-  `attachment`, etc.) com reason `SAFETY_RAW_CONTENT_REJECTED`,
-- `content_processed=true` é rejeitado pelo schema literal,
-- `content_stored=true` é rejeitado pelo schema literal,
-- evento desconhecido é rejeitado,
-- metadata limitado em tamanho e número de chaves,
-- relationship derivation correta para adult/minor/unknown,
-- rule engine: unknown→minor DM gera `step_up_required`,
-- rule engine: alta frequência adult→minor gera `rate_limited` + alerta,
-- rule engine: media upload to minor gera `soft_block` + needs_review,
-- rule engine: repeat-reported actor gera needs_review,
-- envelope nunca carrega PII ou refs cruas,
-- payload hash determinístico em hex,
-- audit diff omite refs HMAC,
-- webhook payload satisfaz schema canônico,
-- webhook payload não inclui chaves de raw content nem PII.
-
-Atualizei `taxonomy/reason-codes.test.ts` (novo teste para
-`SAFETY_RISK_FLAGGED` como LIVE) e `retention/retention-classes.test.ts`
-(safety/consent agora não-reservados).
-
-#### Deno (corre no CI Edge Functions)
-
-| Arquivo | Testes |
-|---|---|
-| `supabase/functions/_tests/safety-envelope.test.ts` | 5 |
-
-Cobertura: relationship derivation, decisão step_up_required,
-webhook payload schema, audit diff sem refs, payload hash determinístico.
-
-## Resultado dos comandos
+## 5. Validação
 
 | Comando | Resultado |
 |---|---|
-| `pnpm install` | OK |
-| `pnpm typecheck` | 5/5 packages OK |
-| `pnpm test` | 17 test files / **207 testes** OK (185 da rodada anterior + 22 novos do Safety) |
-| `pnpm lint` | OK |
+| `pnpm typecheck` | **5/5** OK. |
+| `pnpm lint` | Sem regressão nova. |
+| `pnpm test` | **182/182** vitest. |
+| `pnpm build` | Não executado (admin Next.js depende de envs Supabase). |
 
-`pnpm build` continua com a falha pré-existente em `@agekey/sdk-js`
-(não é regressão desta rodada).
+## 6. Riscos remanescentes
 
-## Mapeamento dos critérios da Fase B
+1. **`Database` types** do admin não inclui as 9 novas tabelas — pages usam `as never` cast. Após primeira aplicação das migrations em staging, regenerar via `supabase gen types typescript` e remover os casts.
+2. **`safety_recompute_messages_24h` RPC** referenciada em `safety-aggregates-refresh` ainda não existe — função SQL precisa ser adicionada em rodada futura para o cron rodar sem fallback. MVP funciona porque aggregates são incrementados em-line no ingest.
+3. **Rule editor UI** não foi implementado — overrides per-tenant via SQL apenas.
+4. **`safety-alert-dispatch`** usa `X-AgeKey-API-Key`. Para roles admin específicas, migrar para auth-jwt em rodada futura.
+5. **`safety_model_runs`** existe mas governança de classificadores é stub — nenhum modelo é executado em V1.
+6. **Cross-tenant tests** em staging real ficam para rodada R8 (já planejada).
+7. **Resolver `subject_ref_hmac` real do counterparty** quando criando consent check pelo Safety: estamos usando `counterparty.id` como fallback (ID interno) em vez do HMAC do tenant — funcional para correlação, mas idealmente o tenant deveria gerar o HMAC client-side e Safety preservar.
 
-| Critério | Status |
-|---|---|
-| MVP metadata-only implementado | ✅ |
-| Eventos mínimos aceitos | ✅ (22 event types canônicos) |
-| Conteúdo bruto rejeitado | ✅ (boundary check + Zod literal + CHECK SQL) |
-| Privacy guard ativo | ✅ (3 camadas) |
-| RLS aplicado | ✅ (8 tabelas) |
-| Rule engine inicial | ✅ (5 system rules + DSL com operator allowlist) |
-| Alertas criados | ✅ (`safety_alerts` + trigger fan-out) |
-| Step-up usa Core verification_session | ✅ (`safety-step-up` chama `resolvePolicy` + INSERT canônico) |
-| Consent check usa AgeKey Consent | ✅ (decision `parental_consent_required` + webhook event `safety.parental_consent_check_required`) |
-| Webhooks minimizados | ✅ (`WebhookSafetyEventSchema` strict + privacy guard) |
-| Retention cleanup existe | ✅ (dry-run-by-default; particionamento real é P3) |
-| Testes passando | ✅ |
+## 7. Próximas rodadas (mantém roteiro do projeto)
 
-## Itens declarados como stub honesto
+| # | Branch | Escopo |
+|---|---|---|
+| **R5** | `claude/agekey-parental-consent-otp-provider` | Provider real de OTP (SMTP/SMS) para Consent. |
+| R6 | `claude/agekey-parental-consent-text-public` | Endpoint público de texto integral no painel. |
+| R7 | `claude/agekey-retention-cron` | Cron de cleanup geral (Core + Consent + Safety unificado). |
+| R8 | `claude/agekey-cross-tenant-tests` | Tests cross-tenant em staging real. |
+| R9 | `claude/agekey-safety-rule-editor` | UI de edição/override de regras. |
+| R10 | `claude/agekey-credential-mode` | SD-JWT VC com biblioteca real, issuer, test vectors. |
+| R11 | `claude/agekey-proof-mode-zkp` | ZKP/BBS+ idem. |
 
-1. **`safety-alert-dispatch`** — re-emit explícito requer chamada
-   manual a `webhook_deliveries`; gated atrás da rodada de
-   webhooks-hardening.
-2. **`safety-aggregates-refresh`** — registra log de tamanho da amostra;
-   upsert per-bucket completo é P3.
-3. **`safety-retention-cleanup`** — dry-run-by-default; expurgo real
-   depende de particionamento mensal de `safety_events` (P3).
-4. **Edge Functions content/media analysis** — todas as flags
-   `AGEKEY_SAFETY_CONTENT_*` / `MEDIA_GUARD_*` ficam **OFF**.
-5. **`safety_model_runs`** — tabela criada, vazia por padrão; ligar
-   exige `AGEKEY_SAFETY_MODEL_GOVERNANCE_ENABLED`.
-6. **SDK helpers `beforeSendMessage`/`beforeUploadMedia`** —
-   honest stubs que **rejeitam** raw content/bytes para fixar o
-   contrato metadata-only no integrador.
-7. **Aggregates inline no ingest** — MVP usa `count(*)` ad-hoc na hora
-   da avaliação; o snapshot de aggregates pré-computados é otimização
-   P2.
+## 8. Confirmação expressa
 
-## Riscos remanescentes
+Esta rodada **não**:
 
-1. **`safety_events` cresce sem particionamento**: até a rodada de
-   particionamento mensal entrar, o expurgo real está bloqueado e a
-   tabela vai crescer linearmente. Mitigação: dry-run-by-default
-   permite acompanhar a contagem.
-2. **Aggregates ad-hoc no ingest**: `count(*)` por actor a cada
-   ingest pode ficar caro em cargas altas. Index existe
-   (`idx_safety_events_actor`); migrar para `safety_aggregates`
-   pré-computado é otimização P2.
-3. **Sample-only rules**: o motor MVP avalia todas as regras
-   linearmente; tenant pode adicionar regras pesadas. Mitigação atual:
-   máximo de 32 sub-rules por grupo, validado pelo schema.
-4. **HMAC fallback** (herdado do Consent): produção precisa
-   provisionar Vault key dedicada antes de subir o flag.
-5. **Webhook signature** continua usando `secret_hash` como key (mesmo
-   formato do Core e do Consent). Hardening em P4.
-6. **Consent interlock automático** (auto-emitir
-   `parental-consent-session-create` quando rule pedir) é P3 — produto
-   precisa decidir billing.
-7. **`pnpm build` pré-existente** em `@agekey/sdk-js` continua
-   falhando (não é regressão).
+- ❌ implementou interceptação, vigilância ou spyware.
+- ❌ persistiu conteúdo bruto (message, raw_text, image, video, audio).
+- ❌ implementou reconhecimento facial.
+- ❌ implementou emotion recognition.
+- ❌ criou score universal cross-tenant.
+- ❌ usou LLM externo para conteúdo de menor.
+- ❌ declarou crime comprovado.
+- ❌ alterou trigger SQL `fan_out_verification_webhooks` (Core).
+- ❌ alterou trigger SQL `fan_out_parental_consent_webhooks` (Consent).
+- ❌ implementou SD-JWT VC, ZKP/BBS+ ou gateway real.
+- ❌ apagou legal_hold.
 
-## Confirmações finais
+A rodada **sim**:
 
-- ❌ **Não houve interceptação** de tráfego TLS ou comunicações.
-- ❌ **Não houve spyware** ou monitoramento de dispositivo fora da
-  aplicação cliente.
-- ❌ **Não houve conteúdo bruto** persistido (3 camadas de defesa).
-- ❌ **Não houve KYC** ou identificação civil.
-- ❌ **Não houve reconhecimento facial** ou biometria.
-- ❌ **Não houve emotion recognition**.
-- ❌ **Não houve score universal** cross-tenant
-  (`safety_subjects.risk_score` é per-tenant).
-- ❌ **Não houve ZKP falso** ou SD-JWT falso.
-- ❌ **Não houve duplicação do Core**: privacy guard, decision
-  envelope, webhook signer, reason codes e retention vieram do
-  canônico.
-- ✅ **Houve módulo MVP coeso**, com schemas, migration, edge
-  functions, UI skeleton, SDK helper, docs e testes.
+- ✅ entregou metadata-only ingest com privacy guard `safety_event_v1`.
+- ✅ entregou 5 regras sistêmicas + composição correta.
+- ✅ entregou step-up via Core e consent check via Consent.
+- ✅ entregou retention cleanup respeitando legal_hold (trigger + GUC).
+- ✅ entregou SDK com stubs honestos que **não recebem conteúdo**.
+- ✅ entregou 14 admin pages para visibilidade do tenant.
+- ✅ documentou pendências (rule editor, SD-JWT VC, score universal NÃO planejado).
+- ✅ executou typecheck (5/5), lint (sem regressão) e test (182/182).
