@@ -64,21 +64,12 @@ export function categorizeReasonCode(code: string): ReasonCodeCategory {
 }
 
 /**
- * Reserved codes for the Safety Signals module. The Core does not emit them
- * yet — they are declared here so adapters and clients can lock the wire
- * spelling now and avoid breaking changes when the module ships.
- *
- * Round 3 (Parental Consent) PROMOTED the consent codes from RESERVED to LIVE
- * in `../reason-codes.ts`; only the Safety codes remain reserved.
- *
- * IMPORTANT: keep these in sync with `infrastructure/data-model.md` whenever
- * a Safety code is promoted from "reserved" to "live".
+ * Reserved codes for future modules. Empty after Round 4 promoted both the
+ * Consent and Safety code namespaces to LIVE in `../reason-codes.ts`. Kept
+ * as a structural hook so future modules can declare reserved codes without
+ * adjusting the index file.
  */
-export const RESERVED_REASON_CODES = {
-  SAFETY_RISK_FLAGGED: 'SAFETY_RISK_FLAGGED',
-  SAFETY_PRIVACY_BUDGET_EXCEEDED: 'SAFETY_PRIVACY_BUDGET_EXCEEDED',
-  SAFETY_DEVICE_BLOCKED: 'SAFETY_DEVICE_BLOCKED',
-} as const;
+export const RESERVED_REASON_CODES = {} as const;
 
 export type ReservedReasonCode =
   (typeof RESERVED_REASON_CODES)[keyof typeof RESERVED_REASON_CODES];

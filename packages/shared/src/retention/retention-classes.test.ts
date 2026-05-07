@@ -71,9 +71,10 @@ describe('retention classes', () => {
     );
   });
 
-  it('marks consent and safety categories as reserved', () => {
-    expect(isReservedRetentionCategory('consent_receipt')).toBe(true);
-    expect(isReservedRetentionCategory('safety_risk_signal')).toBe(true);
+  it('treats consent and safety categories as live after rounds 3 and 4', () => {
+    // Both namespaces were promoted from RESERVED to LIVE.
+    expect(isReservedRetentionCategory('consent_receipt')).toBe(false);
+    expect(isReservedRetentionCategory('safety_risk_signal')).toBe(false);
     expect(isReservedRetentionCategory('audit_event')).toBe(false);
   });
 });

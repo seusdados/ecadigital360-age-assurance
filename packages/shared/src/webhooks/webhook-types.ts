@@ -32,21 +32,24 @@ export const WEBHOOK_EVENT_TYPES = {
   PARENTAL_CONSENT_NEEDS_REVIEW: 'parental_consent.needs_review',
   PARENTAL_CONSENT_EXPIRED: 'parental_consent.expired',
   PARENTAL_CONSENT_REVOKED: 'parental_consent.revoked',
+  // Safety Signals module — promoted from RESERVED to LIVE in Round 4.
+  SAFETY_EVENT_INGESTED: 'safety.event_ingested',
+  SAFETY_ALERT_CREATED: 'safety.alert_created',
+  SAFETY_ALERT_UPDATED: 'safety.alert_updated',
+  SAFETY_STEP_UP_REQUIRED: 'safety.step_up_required',
+  SAFETY_PARENTAL_CONSENT_CHECK_REQUIRED:
+    'safety.parental_consent_check_required',
+  SAFETY_RISK_FLAGGED: 'safety.risk_flagged',
 } as const;
 
 export type WebhookEventType =
   (typeof WEBHOOK_EVENT_TYPES)[keyof typeof WEBHOOK_EVENT_TYPES];
 
 /**
- * Reserved event types for the Safety Signals module. Subscribers can include
- * them in their `events` array; the Core does not emit them yet.
- *
- * Round 3 (Parental Consent) promoted `consent.*` events to LIVE under the
- * `parental_consent.*` namespace in WEBHOOK_EVENT_TYPES.
+ * Reserved event types for future modules. Empty after Round 4 promoted
+ * the safety.* namespace to LIVE in WEBHOOK_EVENT_TYPES.
  */
-export const RESERVED_WEBHOOK_EVENT_TYPES = {
-  SAFETY_RISK_FLAGGED: 'safety.risk_flagged',
-} as const;
+export const RESERVED_WEBHOOK_EVENT_TYPES = {} as const;
 
 export type ReservedWebhookEventType =
   (typeof RESERVED_WEBHOOK_EVENT_TYPES)[keyof typeof RESERVED_WEBHOOK_EVENT_TYPES];
@@ -153,6 +156,52 @@ export type WebhookParentalConsentEvent = z.infer<
   typeof WebhookParentalConsentEventSchema
 >;
 
+/**
+ * Safety Signals event payload. METADATA-ONLY by construction:
+ *   * no raw text, no media, no IP plaintext;
+ *   * no PII keys (privacy guard rejects them on egress);
+ *   * `payload_hash` anchors the canonical envelope hash for tamper-evidence.
+ */
+export const WebhookSafetyEventSchema = z
+  .object({
+    event_id: UuidSchema,
+    event_type: z.enum([
+      WEBHOOK_EVENT_TYPES.SAFETY_EVENT_INGESTED,
+      WEBHOOK_EVENT_TYPES.SAFETY_ALERT_CREATED,
+      WEBHOOK_EVENT_TYPES.SAFETY_ALERT_UPDATED,
+      WEBHOOK_EVENT_TYPES.SAFETY_STEP_UP_REQUIRED,
+      WEBHOOK_EVENT_TYPES.SAFETY_PARENTAL_CONSENT_CHECK_REQUIRED,
+      WEBHOOK_EVENT_TYPES.SAFETY_RISK_FLAGGED,
+    ]),
+    created_at: z.string().datetime(),
+    tenant_id: UuidSchema,
+    application_id: UuidSchema,
+    decision: z.enum([
+      'approved',
+      'needs_review',
+      'step_up_required',
+      'rate_limited',
+      'soft_blocked',
+      'hard_blocked',
+      'blocked_by_policy',
+      'parental_consent_required',
+      'error',
+    ]),
+    safety_alert_id: UuidSchema.nullable(),
+    safety_event_id: UuidSchema.nullable(),
+    severity: z.enum(['low', 'medium', 'high', 'critical']),
+    risk_category: z.string().min(1).max(64),
+    policy_id: UuidSchema.nullable(),
+    policy_version: z.number().int().positive().nullable(),
+    reason_codes: z.array(z.string().min(1).max(64)).min(1),
+    payload_hash: z.string().regex(/^[0-9a-f]{64}$/),
+    pii_included: z.literal(false),
+    content_included: z.literal(false),
+  })
+  .strict();
+
+export type WebhookSafetyEvent = z.infer<typeof WebhookSafetyEventSchema>;
+
 /** Discriminated union over all live webhook payload shapes. */
 export const WebhookEventPayloadSchema = z.discriminatedUnion('event_type', [
   WebhookVerificationEventSchema.extend({
@@ -193,6 +242,26 @@ export const WebhookEventPayloadSchema = z.discriminatedUnion('event_type', [
   WebhookParentalConsentEventSchema.extend({
     event_type: z.literal(WEBHOOK_EVENT_TYPES.PARENTAL_CONSENT_REVOKED),
   }),
+  WebhookSafetyEventSchema.extend({
+    event_type: z.literal(WEBHOOK_EVENT_TYPES.SAFETY_EVENT_INGESTED),
+  }),
+  WebhookSafetyEventSchema.extend({
+    event_type: z.literal(WEBHOOK_EVENT_TYPES.SAFETY_ALERT_CREATED),
+  }),
+  WebhookSafetyEventSchema.extend({
+    event_type: z.literal(WEBHOOK_EVENT_TYPES.SAFETY_ALERT_UPDATED),
+  }),
+  WebhookSafetyEventSchema.extend({
+    event_type: z.literal(WEBHOOK_EVENT_TYPES.SAFETY_STEP_UP_REQUIRED),
+  }),
+  WebhookSafetyEventSchema.extend({
+    event_type: z.literal(
+      WEBHOOK_EVENT_TYPES.SAFETY_PARENTAL_CONSENT_CHECK_REQUIRED,
+    ),
+  }),
+  WebhookSafetyEventSchema.extend({
+    event_type: z.literal(WEBHOOK_EVENT_TYPES.SAFETY_RISK_FLAGGED),
+  }),
 ]);
 
 export type WebhookEventPayload = z.infer<typeof WebhookEventPayloadSchema>;
@@ -202,6 +271,13 @@ export function isParentalConsentEventType(
   eventType: string,
 ): eventType is WebhookParentalConsentEvent['event_type'] {
   return eventType.startsWith('parental_consent.');
+}
+
+/** Returns true if the event_type targets a safety.* event. */
+export function isSafetyEventType(
+  eventType: string,
+): eventType is WebhookSafetyEvent['event_type'] {
+  return eventType.startsWith('safety.');
 }
 
 /** Returns true if the event_type belongs to the live (emitted) catalog. */

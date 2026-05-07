@@ -79,9 +79,10 @@ export const RETENTION_CLASSES: Readonly<
  * retention class that governs it. The retention-job edge function and the
  * Admin UI both read from this table.
  *
- * Categories starting with `consent_` and `safety_` are RESERVED for the
- * upcoming modules and are listed here so a policy author can preview the
- * intended retention before those modules ship.
+ * Round 3 (Parental Consent) and Round 4 (Safety Signals) promoted their
+ * categories from RESERVED to LIVE. Plumbing them through the retention-job
+ * edge function is tracked in `safety-signals/RETENTION.md` and
+ * `parental-consent/data-model.md` (P3 backlog).
  */
 export const RETENTION_CATEGORIES = {
   session_state: 'ephemeral',
@@ -92,9 +93,13 @@ export const RETENTION_CATEGORIES = {
   billing_event: 'standard_audit',
   policy_version: 'regulatory',
   webhook_delivery: 'standard_audit',
-  // Reserved — not yet enforced by retention-job.
   consent_receipt: 'regulatory',
   consent_revocation: 'regulatory',
+  consent_text_version: 'regulatory',
+  guardian_verification: 'ephemeral',
+  safety_event: 'standard_audit',
+  safety_alert: 'standard_audit',
+  safety_aggregate: 'short_lived',
   safety_risk_signal: 'short_lived',
 } as const;
 
@@ -136,7 +141,11 @@ export function effectiveRetentionSeconds(
   return Math.min(klass.max_seconds, tenantSeconds);
 }
 
-/** Returns true when a category is reserved (not yet enforced). */
-export function isReservedRetentionCategory(category: string): boolean {
-  return category.startsWith('consent_') || category.startsWith('safety_');
+/** Returns true when a category is reserved (not yet enforced).
+ *  After Round 3 + 4 promoted both consent_* and safety_* to LIVE in
+ *  RETENTION_CATEGORIES, this check returns false — kept as a structural
+ *  hook for future modules.
+ */
+export function isReservedRetentionCategory(_category: string): boolean {
+  return false;
 }
