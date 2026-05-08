@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import { UuidSchema } from './common.ts';
+import { DecisionEnvelopeSchema } from '../decision/decision-envelope.ts';
 
 // ============================================================
 // ENUMS
@@ -106,6 +107,12 @@ export const ParentalConsentSessionCreateResponseSchema = z.object({
     locale: z.string(),
     text_hash: z.string().min(16),
   }),
+  /**
+   * Decision Envelope canônico (opcional, additive — compat HML
+   * preservada). Quando presente, expressa o estado da decisão sem PII
+   * conforme `packages/shared/src/decision/decision-envelope.ts`.
+   */
+  decision_envelope: DecisionEnvelopeSchema.optional(),
 });
 export type ParentalConsentSessionCreateResponse = z.infer<
   typeof ParentalConsentSessionCreateResponseSchema
@@ -203,6 +210,17 @@ export const ParentalConsentConfirmResponseSchema = z.object({
       kid: z.string(),
     })
     .nullable(),
+  /**
+   * Decision Envelope canônico (opcional, additive). Vincula o hash do
+   * texto via `consent_text_version_id` em `policy_id` — o auditor pode
+   * resolver `consent_text_versions.text_hash` para replay.
+   */
+  decision_envelope: DecisionEnvelopeSchema.optional(),
+  /**
+   * SHA-256 do texto exato apresentado ao responsável. Repetido aqui para
+   * permitir auditoria local sem nova consulta. Sem PII (apenas hash).
+   */
+  consent_text_hash: z.string().min(16).optional(),
 });
 export type ParentalConsentConfirmResponse = z.infer<
   typeof ParentalConsentConfirmResponseSchema
@@ -233,6 +251,8 @@ export const ParentalConsentSessionGetResponseSchema = z.object({
   expires_at: z.string().datetime(),
   decided_at: z.string().datetime().nullable(),
   reason_code: z.string().nullable(),
+  /** Decision Envelope canônico (opcional, additive). */
+  decision_envelope: DecisionEnvelopeSchema.optional(),
 });
 export type ParentalConsentSessionGetResponse = z.infer<
   typeof ParentalConsentSessionGetResponseSchema
@@ -275,6 +295,8 @@ export const ParentalConsentRevokeResponseSchema = z.object({
   parental_consent_id: UuidSchema,
   revoked_at: z.string().datetime(),
   reason_code: z.literal('CONSENT_REVOKED'),
+  /** Decision Envelope canônico (opcional, additive). */
+  decision_envelope: DecisionEnvelopeSchema.optional(),
 });
 export type ParentalConsentRevokeResponse = z.infer<
   typeof ParentalConsentRevokeResponseSchema
@@ -329,6 +351,8 @@ export const ParentalConsentTokenVerifyResponseSchema = z.object({
       }),
     })
     .optional(),
+  /** Decision Envelope canônico (opcional, additive). */
+  decision_envelope: DecisionEnvelopeSchema.optional(),
 });
 export type ParentalConsentTokenVerifyResponse = z.infer<
   typeof ParentalConsentTokenVerifyResponseSchema

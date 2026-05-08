@@ -4,6 +4,8 @@
 // diretamente — facilita teste e mantém defaults canônicos.
 
 import { readFeatureFlags } from '../../../../packages/shared/src/feature-flags/index.ts';
+import { CANONICAL_REASON_CODES } from '../../../../packages/shared/src/taxonomy/reason-codes.ts';
+import { corsHeaders } from '../cors.ts';
 
 export interface ParentalConsentRuntimeFlags {
   enabled: boolean;
@@ -45,4 +47,32 @@ export function readParentalConsentFlags(): ParentalConsentRuntimeFlags {
     consentDefaultExpiryDays:
       Number.isFinite(expiryDays) && expiryDays > 0 ? expiryDays : 365,
   };
+}
+
+/**
+ * Resposta canônica 503 quando a feature flag global do módulo Consent
+ * está OFF. NÃO acessa o banco e NÃO emite nenhuma side-effect além do
+ * próprio Response. Use no início de cada handler antes de qualquer
+ * leitura/escrita.
+ *
+ * Status 503 (Service Unavailable) é o correto semântico: o módulo
+ * existe mas está desligado por configuração — o caller pode tentar
+ * de novo após a operação habilitar a flag. NÃO é 403 (forbidden) porque
+ * o caller não fez nada errado.
+ */
+export function featureDisabledResponse(origin: string | null): Response {
+  const body = {
+    error: 'ServiceUnavailableError',
+    reason_code: CANONICAL_REASON_CODES.SYSTEM_INVALID_REQUEST,
+    message:
+      'AgeKey Consent module is disabled (AGEKEY_PARENTAL_CONSENT_ENABLED=false).',
+  };
+  return new Response(JSON.stringify(body), {
+    status: 503,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Retry-After': '60',
+      ...corsHeaders(origin),
+    },
+  });
 }

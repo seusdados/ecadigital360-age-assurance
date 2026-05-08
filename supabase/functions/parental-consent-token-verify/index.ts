@@ -15,6 +15,11 @@ import { preflight } from '../_shared/cors.ts';
 import { config } from '../_shared/env.ts';
 import { verifyParentalConsentToken } from '../_shared/parental-consent/consent-token.ts';
 import {
+  readParentalConsentFlags,
+  featureDisabledResponse,
+} from '../_shared/parental-consent/feature-flags.ts';
+import { buildConsentDecisionEnvelope } from '../_shared/parental-consent/decision-envelope.ts';
+import {
   ParentalConsentTokenVerifyRequestSchema,
   type ParentalConsentTokenVerifyResponse,
 } from '../../../packages/shared/src/schemas/parental-consent.ts';
@@ -50,6 +55,16 @@ serve(async (req) => {
   }
 
   try {
+    const flags = readParentalConsentFlags();
+    if (!flags.enabled) {
+      log.info('parental_consent_feature_disabled', {
+        fn: FN,
+        trace_id,
+        status: 503,
+      });
+      return featureDisabledResponse(origin);
+    }
+
     let body: unknown;
     try {
       body = await req.json();
@@ -91,11 +106,13 @@ serve(async (req) => {
         reason_code: reasonMap[result.reason] ?? CANONICAL_REASON_CODES.TOKEN_INVALID,
         revoked: false,
       };
-      log.info('parental_consent_token_verified', {
+      // Evento de auditoria distinto para rejeição.
+      log.info('parental_consent_token_rejected', {
         fn: FN,
         trace_id,
         valid: false,
         reason: result.reason,
+        reason_code: out.reason_code,
         status: 200,
       });
       return jsonResponse(out, { origin });
@@ -109,22 +126,43 @@ serve(async (req) => {
       .maybeSingle();
     const revoked = Boolean(tokenRow?.revoked_at);
 
+    const reasonCode = revoked
+      ? CANONICAL_REASON_CODES.TOKEN_REVOKED
+      : CANONICAL_REASON_CODES.CONSENT_APPROVED;
+
+    const decisionEnvelope = buildConsentDecisionEnvelope({
+      decisionId: result.claims.agekey.decision_id,
+      decision: revoked ? 'revoked' : 'approved',
+      reasonCode,
+      tenantId: result.claims.agekey.tenant_id,
+      applicationId: result.claims.agekey.application_id,
+      policyId: result.claims.agekey.policy.id,
+      policyVersion: String(result.claims.agekey.policy.version),
+      consentTokenId: result.claims.jti,
+      expiresAt: new Date(result.claims.exp * 1000).toISOString(),
+      assuranceLevel: result.claims.agekey.consent_assurance_level,
+    });
+
     const out: ParentalConsentTokenVerifyResponse = {
       valid: !revoked,
       revoked,
-      reason_code: revoked
-        ? CANONICAL_REASON_CODES.TOKEN_REVOKED
-        : CANONICAL_REASON_CODES.CONSENT_APPROVED,
+      reason_code: reasonCode,
       claims: result.claims,
+      decision_envelope: decisionEnvelope,
     };
 
-    log.info('parental_consent_token_verified', {
-      fn: FN,
-      trace_id,
-      valid: out.valid,
-      revoked,
-      status: 200,
-    });
+    // Evento de auditoria distinto para verificação bem-sucedida.
+    log.info(
+      revoked ? 'parental_consent_token_rejected' : 'parental_consent_token_verified',
+      {
+        fn: FN,
+        trace_id,
+        valid: out.valid,
+        revoked,
+        reason_code: reasonCode,
+        status: 200,
+      },
+    );
     return jsonResponse(out, { origin });
   } catch (err) {
     return respondError(fnCtx, err);

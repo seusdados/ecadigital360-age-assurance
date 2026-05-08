@@ -12,7 +12,6 @@ import {
   respondError,
   InvalidRequestError,
   InternalError,
-  ForbiddenError,
 } from '../_shared/errors.ts';
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
@@ -22,7 +21,11 @@ import {
   generatePanelToken,
   hashPanelToken,
 } from '../_shared/parental-consent/panel-token.ts';
-import { readParentalConsentFlags } from '../_shared/parental-consent/feature-flags.ts';
+import {
+  readParentalConsentFlags,
+  featureDisabledResponse,
+} from '../_shared/parental-consent/feature-flags.ts';
+import { buildConsentDecisionEnvelope } from '../_shared/parental-consent/decision-envelope.ts';
 import {
   ParentalConsentSessionCreateRequestSchema,
   type ParentalConsentSessionCreateResponse,
@@ -48,9 +51,13 @@ serve(async (req) => {
   try {
     const flags = readParentalConsentFlags();
     if (!flags.enabled) {
-      throw new ForbiddenError(
-        'AgeKey Consent module is disabled (AGEKEY_PARENTAL_CONSENT_ENABLED=false).',
-      );
+      // 503 — não tocar DB. Sem leitura/escrita.
+      log.info('parental_consent_feature_disabled', {
+        fn: FN,
+        trace_id,
+        status: 503,
+      });
+      return featureDisabledResponse(origin);
     }
 
     const client = db();
@@ -161,6 +168,18 @@ serve(async (req) => {
       req_.id
     }?token=${encodeURIComponent(panelTokenRaw)}`;
 
+    const decisionEnvelope = buildConsentDecisionEnvelope({
+      decisionId: req_.id as string,
+      decision: 'pending_guardian',
+      reasonCode: CANONICAL_REASON_CODES.CONSENT_REQUIRED,
+      tenantId: principal.tenantId,
+      applicationId: principal.applicationId,
+      policyId: policy.id,
+      policyVersion: String(policy.current_version),
+      resource: input.resource,
+      expiresAt: req_.expires_at as string,
+    });
+
     const response: ParentalConsentSessionCreateResponse = {
       consent_request_id: req_.id as string,
       status: req_.status as ParentalConsentSessionCreateResponse['status'],
@@ -178,6 +197,7 @@ serve(async (req) => {
         locale: ctvRow.locale as string,
         text_hash: ctvRow.text_hash as string,
       },
+      decision_envelope: decisionEnvelope,
     };
 
     // Defesa final — resposta pública não pode vazar PII.
