@@ -1,11 +1,52 @@
 # HML — Edge Functions redeploy + smoke tests
 
-> **Status**: ⏸ Pré-flight concluído, deploy **bloqueado por falta de auth do Supabase CLI** na sessão. Comandos exatos preparados abaixo para execução do operador.
+> **Status atual**: ⏸ Workflow GitHub Action **criado** (PR #64), aguardando:
+> 1. Configuração de `SUPABASE_ACCESS_TOKEN` em GitHub Secrets pelo operador.
+> 2. Disparo manual do workflow `Deploy HML Edge Functions`.
+> 3. Smoke tests cURL e UI pelo operador.
 >
-> Ambiente: HML apenas (`wljedzqgprkpqhuazdzv`). PROD não foi tocada.
+> Deploy ainda **NÃO executado**. PROD intocada.
+>
+> Ambiente: HML apenas (`wljedzqgprkpqhuazdzv`).
 > Commit `main` usado: `c868312053ce182f9cd971408609ccbf5c426366`.
 > Data: 2026-05-08.
 > Branch: `claude/hml-edge-redeploy-and-smoke-report`.
+
+## 0. Update — workflow GitHub Action substitui CLI local
+
+A abordagem original (operador rodar `supabase functions deploy` no notebook) **não é mais viável** — operador sem notebook. Foi substituída por workflow manual em GitHub Actions, criado em PR #64:
+
+- Arquivo: `.github/workflows/deploy-hml-edge-functions.yml`
+- Plan doc: `docs/audit/hml-edge-functions-github-actions-deploy-plan.md`
+- Trigger: manual (`workflow_dispatch`) com input `confirm_hml_deploy = "DEPLOY_HML_EDGE_FUNCTIONS"`
+- Secret: `SUPABASE_ACCESS_TOKEN` (único)
+- Defesas: HML hardcoded com guard, function-by-function, fail-fast
+
+**Esta seção §0 substitui o §3 e o §4 abaixo no que se refere a "como executar". Os §1, §2, §5, §6, §7, §8 (estado pré-flight, BEFORE state, smoke tests, princípios, riscos) continuam válidos.**
+
+### 0.1. Próximos passos para o operador
+
+1. Mergear PR #64 (workflow + plan).
+2. Configurar repo secret `SUPABASE_ACCESS_TOKEN` em https://github.com/seusdados/ecadigital360-age-assurance/settings/secrets/actions.
+3. Disparar o workflow em https://github.com/seusdados/ecadigital360-age-assurance/actions → "Deploy HML Edge Functions" → Run workflow → digitar `DEPLOY_HML_EDGE_FUNCTIONS`.
+4. Aguardar conclusão (~15–30 min para 14 functions).
+5. Avisar Claude para validar via MCP `list_edge_functions`.
+6. Rodar smoke tests cURL com tenant API key (§5.2 abaixo).
+7. Validar UI HML (§5.3 abaixo).
+
+### 0.2. Status checklist consolidado
+
+- [x] Pré-flight (main em c868312, tests 351/351, HML migrations alinhadas).
+- [x] BEFORE state das 14 edge functions capturado (§2).
+- [x] Workflow criado (PR #64).
+- [x] Plan doc criado.
+- [ ] PR #64 mergeado.
+- [ ] Secret `SUPABASE_ACCESS_TOKEN` configurado pelo operador.
+- [ ] Workflow disparado.
+- [ ] POST state validado por Claude via MCP.
+- [ ] Smoke tests cURL pelo operador.
+- [ ] Smoke tests UI pelo operador.
+- [ ] Update final deste relatório com resultados.
 
 ## 1. Pré-flight (todos ✅)
 
