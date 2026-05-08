@@ -1,12 +1,15 @@
 # HML — Edge Functions redeploy + smoke tests
 
-> **Status atual**: ✅ Deploy + mitigação `verify_jwt` concluídos pelo operador. POST mitigação validado via MCP. Schema/data preservados. Aguardando smoke tests cURL/UI pelo operador.
+> **Status atual**: ✅ Deploy + mitigação `verify_jwt` concluídos pelo operador. POST mitigação validado via MCP. Workflow GitHub Actions com `--no-verify-jwt` mergeado em `main` (PR #64, SHA `40bcb421`) — previne recorrência. Schema/data preservados. PROD intocada. Aguardando smoke tests cURL/UI pelo operador.
 >
-> Ambiente: HML apenas (`wljedzqgprkpqhuazdzv`). PROD intocada.
-> Commit `main` usado: `c868312053ce182f9cd971408609ccbf5c426366`.
+> Ambiente: HML apenas (`wljedzqgprkpqhuazdzv`). PROD (`tpdiccnmsnjtjwhardij`) intocada.
+> Commit `main` (pré-PR #64): `c868312053ce182f9cd971408609ccbf5c426366`.
+> Commit `main` (pós-PR #64): `40bcb421db6ed3fc1415767628de350a89fa00e1`.
 > Data deploy operador: 2026-05-08 ~13:23 UTC.
 > Data mitigação `verify_jwt`: 2026-05-08 ~13:33–13:35 UTC.
 > Data validação POST mitigação: 2026-05-08.
+> Data merge PR #64 (workflow GHA com `--no-verify-jwt`): 2026-05-08.
+> Data re-validação POST-merge via MCP: 2026-05-08.
 > Branch: `claude/hml-edge-redeploy-and-smoke-report`.
 
 ## 0. Update — deploy concluído via CLI local pelo operador
@@ -177,13 +180,32 @@ Mesma bateria do §0.3, re-executada após mitigação:
 - [x] **Achado `verify_jwt: true` (regressão) documentado.**
 - [x] **Mitigação `verify_jwt` executada pelo operador com `--no-verify-jwt`.**
 - [x] **POST mitigação validado por Claude via MCP**: 14/14 com `verify_jwt: false`, schema/data preservados.
-- [ ] **Update do workflow PR #64 com `--no-verify-jwt`** (em progresso, ver §0.7).
+- [x] **Update do workflow PR #64 com `--no-verify-jwt`** (mergeado em main, ver §0.7).
+- [x] **Re-validação POST-merge via MCP**: 14/14 ainda com `verify_jwt: false`, versions/updated_at estáveis (ver §0.10).
 - [ ] **Smoke tests cURL pelo operador** (lista no §0.8).
 - [ ] **Smoke tests UI pelo operador** (lista no §0.9).
 
-### 0.7. Atualização do PR #64 (workflow GitHub Action)
+### 0.7. Atualização do PR #64 (workflow GitHub Action) — mergeado
 
-O workflow `.github/workflows/deploy-hml-edge-functions.yml` no PR #64 será atualizado para incluir `--no-verify-jwt` em cada `supabase functions deploy`, evitando que futuros disparos do workflow re-introduzam a mesma regressão. Update commitado no próprio PR #64.
+PR #64 foi atualizado para incluir `--no-verify-jwt` nos 14 deploys e mergeado em `main`:
+
+- **PR**: https://github.com/seusdados/ecadigital360-age-assurance/pull/64
+- **Merge SHA (squash)**: `40bcb421db6ed3fc1415767628de350a89fa00e1`
+- **Estado**: merged ✅
+- **Arquivos em main após merge**:
+  - `.github/workflows/deploy-hml-edge-functions.yml` — 14 steps `supabase functions deploy <fn> --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt` (auditado, todos os 14 com flag presente).
+  - `docs/audit/hml-edge-functions-github-actions-deploy-plan.md` — plano companion com instruções de secret, trigger e verificação.
+- **Defesas do workflow**:
+  - `workflow_dispatch` apenas (sem trigger automático em push/PR).
+  - Confirmação dupla: `if` no job + step runtime guard exigindo input `DEPLOY_HML_EDGE_FUNCTIONS`.
+  - Project ref hardcoded `wljedzqgprkpqhuazdzv` + step defensivo aborta se diferente.
+  - Permissões mínimas (`contents: read`).
+  - Single secret (`SUPABASE_ACCESS_TOKEN`).
+  - Function-by-function (14 steps explícitos).
+
+**Recorrência da regressão `verify_jwt=true` está prevenida**: qualquer disparo futuro do workflow já passa o flag explícito, então a plataforma nunca mais subirá Consent/Safety com `verify_jwt=true` por default.
+
+**Nota**: o workflow não foi disparado nesta janela. O redeploy em HML foi feito manualmente via CLI local pelo operador (ver §0.5). O workflow fica como caminho alternativo / disaster recovery.
 
 ### 0.8. Smoke tests cURL para o operador rodar (com tenant API key)
 
@@ -254,6 +276,75 @@ export DEV_CONTACT_VALUE="dev-test-$(date +%s)@agekey.example"
 | 8 | `/(app)/safety/alerts` | tela carrega (provavelmente vazia em HML) |
 
 Sem 500. Sem regressão em rotas pré-existentes. Se algo falhar, salvar console + Network e reportar.
+
+### 0.10. Re-validação POST-merge do PR #64 via MCP `list_edge_functions`
+
+Re-executado `mcp__list_edge_functions(project_id="wljedzqgprkpqhuazdzv")` após merge de PR #64 em `main` (SHA `40bcb421`). Esperado: estado idêntico ao §0.5 (POST mitigação), porque o merge do PR #64 alterou apenas YAML/MD versionados em git e **não disparou** nenhum deploy.
+
+#### Estado das 14 funções Consent + Safety (POST-merge)
+
+| Function | Versão | `verify_jwt` | `ezbr_sha256` (8) | `updated_at` (UTC) |
+|---|---|---|---|---|
+| `parental-consent-session` | v21 | **`false`** ✅ | `08697655` | 2026-05-08 13:33:47 |
+| `parental-consent-guardian-start` | v20 | **`false`** ✅ | `cf6bdc18` | 2026-05-08 13:33:56 |
+| `parental-consent-confirm` | v20 | **`false`** ✅ | `2e55c99b` | 2026-05-08 13:34:01 |
+| `parental-consent-session-get` | v20 | **`false`** ✅ | `d3129989` | 2026-05-08 13:34:07 |
+| `parental-consent-text-get` | v20 | **`false`** ✅ | `c6b1ac9b` | 2026-05-08 13:34:12 |
+| `parental-consent-token-verify` | v20 | **`false`** ✅ | `b96f16d8` | 2026-05-08 13:34:18 |
+| `parental-consent-revoke` | v20 | **`false`** ✅ | `636b5679` | 2026-05-08 13:34:23 |
+| `safety-event-ingest` | v20 | **`false`** ✅ | `f12cae93` | 2026-05-08 13:34:29 |
+| `safety-rule-evaluate` | v20 | **`false`** ✅ | `b99d4293` | 2026-05-08 13:34:34 |
+| `safety-rules-write` | v20 | **`false`** ✅ | `8ceafd02` | 2026-05-08 13:34:40 |
+| `safety-alert-dispatch` | v20 | **`false`** ✅ | `7066db26` | 2026-05-08 13:34:46 |
+| `safety-step-up` | v20 | **`false`** ✅ | `577338ca` | 2026-05-08 13:34:52 |
+| `safety-aggregates-refresh` | v20 | **`false`** ✅ | `b954b72b` | 2026-05-08 13:35:00 |
+| `safety-retention-cleanup` | v20 | **`false`** ✅ | `ebe71501` | 2026-05-08 13:35:07 |
+
+**Conclusão**: 14/14 estáveis com `verify_jwt: false`. Versões e hashes idênticos aos do §0.5 (POST-mitigação). Confirma que o merge do PR #64 **não causou nenhum redeploy** — apenas adicionou um workflow manual auditável ao repositório. ✅
+
+#### Convenção do projeto (HML)
+
+Re-checado o conjunto completo de 33 funções: as outras 19 funções (`verifications-*`, `applications-*`, `policies-*`, `issuers-*`, `audit-list`, `proof-artifact-url`, `jwks`, `key-rotation`, `webhooks-worker`, `retention-job`, `trust-registry-refresh`, `tenant-bootstrap`) seguem com `verify_jwt: false` e `version: 18`. **HML 100% padronizado em `verify_jwt: false`.** ✅
+
+#### Confirmações de não-ação
+
+- ❌ Nenhum `supabase functions deploy` executado nesta sessão.
+- ❌ Nenhum disparo do workflow `Deploy HML Edge Functions` em GitHub Actions.
+- ❌ Nenhuma chamada a PROD (`tpdiccnmsnjtjwhardij`).
+- ❌ Nenhum `db push`, `migration repair`, `db reset`, `db pull`.
+- ❌ Nenhuma alteração de schema, migrations, RLS, dados ou feature flags.
+- ✅ Apenas leituras MCP (`list_edge_functions`) + escrita neste documento + commit/push em `claude/hml-edge-redeploy-and-smoke-report`.
+
+### 0.11. Cronologia consolidada da operação `verify_jwt`
+
+| Etapa | Quando (UTC) | Quem | O que |
+|---|---|---|---|
+| Deploy inicial | 2026-05-08 ~13:23 | Operador (CLI local) | 14 `supabase functions deploy <fn>` sem `--no-verify-jwt` → versions ↑, mas `verify_jwt: true` introduzido |
+| Achado | 2026-05-08 ~13:25 | Claude (MCP) | `list_edge_functions` revela 14/14 com `verify_jwt: true`, fora do padrão das outras 19 funções |
+| Mitigação | 2026-05-08 ~13:33–13:35 | Operador (CLI local) | 14 `supabase functions deploy <fn> --no-verify-jwt` → versions ↑ novamente, `verify_jwt: false` restaurado |
+| Validação POST-mitigação | 2026-05-08 ~13:35 | Claude (MCP) | `list_edge_functions` confirma 14/14 com `verify_jwt: false` |
+| Workflow YAML hardening | 2026-05-08 | Claude (PR #64) | `.github/workflows/deploy-hml-edge-functions.yml` com `--no-verify-jwt` em cada um dos 14 steps |
+| CI flake transitória | 2026-05-08 | GitHub Actions | "Edge Functions (Deno tests)" falhou em commit anterior por download externo (esm.sh/deno.land); empty commit `06b334f` re-disparou e passou |
+| Merge PR #64 | 2026-05-08 | Operador (autorizado) | Squash merge → `main` em `40bcb421`. Workflow auditável persistido. |
+| Re-validação POST-merge | 2026-05-08 | Claude (MCP) | 14/14 ainda em `verify_jwt: false`, versions/hashes idênticos a POST-mitigação |
+
+### 0.12. Próximos smoke tests pendentes (operador)
+
+Itens **não executados** e que dependem de credenciais que só o operador tem (tenant API key de HML):
+
+- [ ] **§0.8 (cURL smoke tests)**:
+  - [ ] Pré-requisitos exportados (BASE_URL, TENANT_API_KEY, APPLICATION_ID, *_REF_HMAC).
+  - [ ] Comando 1 — confirmar mitigação `verify_jwt`: `curl -i ... /parental-consent-session` → esperado **HTTP 200** (não 401).
+  - [ ] `bash scripts/smoke/consent-smoke.sh` → 7 endpoints + privacy assertions.
+  - [ ] `bash scripts/smoke/safety-smoke.sh` → 7 endpoints + 9 testes negativos (privacy guard).
+  - [ ] `bash scripts/smoke/core-smoke.sh` → regressão das 19 funções core.
+  - [ ] Critérios de aceite no §0.8 (consent body sem PII, safety rejeita raw content, etc.).
+
+- [ ] **§0.9 (UI smoke tests no painel admin HML)**:
+  - [ ] Login → dashboard sem redirect-loop.
+  - [ ] `/applications`, `/policies`, `/(app)/consent`, `/(app)/safety`, `/(app)/safety/rules`, `/(app)/safety/alerts` → carregam sem 500.
+
+Após esses smokes, este relatório receberá um update final com os resultados (success/failure de cada item).
 
 ## 1. Pré-flight (todos ✅)
 
