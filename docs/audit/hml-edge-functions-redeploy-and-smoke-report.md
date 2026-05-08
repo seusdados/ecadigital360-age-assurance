@@ -1,11 +1,12 @@
 # HML — Edge Functions redeploy + smoke tests
 
-> **Status atual**: ✅ Deploy HML **concluído pelo operador via Supabase CLI local**. POST state validado via MCP `list_edge_functions`. ⚠️ **Atenção**: o flag `verify_jwt` flipou de `false` → `true` em todas as 14 funções (provável regressão — ver §0.4).
+> **Status atual**: ✅ Deploy + mitigação `verify_jwt` concluídos pelo operador. POST mitigação validado via MCP. Schema/data preservados. Aguardando smoke tests cURL/UI pelo operador.
 >
 > Ambiente: HML apenas (`wljedzqgprkpqhuazdzv`). PROD intocada.
 > Commit `main` usado: `c868312053ce182f9cd971408609ccbf5c426366`.
 > Data deploy operador: 2026-05-08 ~13:23 UTC.
-> Data validação POST: 2026-05-08.
+> Data mitigação `verify_jwt`: 2026-05-08 ~13:33–13:35 UTC.
+> Data validação POST mitigação: 2026-05-08.
 > Branch: `claude/hml-edge-redeploy-and-smoke-report`.
 
 ## 0. Update — deploy concluído via CLI local pelo operador
@@ -109,20 +110,150 @@ Cada função receberá uma nova `version` (v20 para `parental-consent-session`,
 
 O workflow `.github/workflows/deploy-hml-edge-functions.yml` (PR #64) deve ser atualizado para incluir `--no-verify-jwt` em cada `supabase functions deploy`, evitando que futuros disparos do workflow re-introduzam a mesma regressão. Recomendo isso como segundo PR no PR #64 antes do merge.
 
-### 0.5. Status checklist consolidado
+### 0.5. Mitigação `verify_jwt` — executada pelo operador (2026-05-08 ~13:33 UTC)
+
+Operador re-deployou as 14 funções com flag explícito `--no-verify-jwt`. Comando aplicado:
+
+```bash
+supabase functions deploy <fn> --project-ref wljedzqgprkpqhuazdzv --no-verify-jwt
+```
+
+#### POST mitigação — versões e flags (capturados via MCP)
+
+| Function | v PRÉ-mitig. | `verify_jwt` PRÉ | v PÓS-mitig. | `verify_jwt` PÓS | Hash mudou? | updated_at |
+|---|---|---|---|---|---|---|
+| `parental-consent-session` | v20 | `true` ⚠️ | **v21** | **`false`** ✅ | ❌ Não (08697655) | 13:33 UTC |
+| `parental-consent-guardian-start` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (cf6bdc18) | 13:33 UTC |
+| `parental-consent-confirm` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (2e55c99b) | 13:34 UTC |
+| `parental-consent-session-get` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (d3129989) | 13:34 UTC |
+| `parental-consent-text-get` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (c6b1ac9b) | 13:34 UTC |
+| `parental-consent-token-verify` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (b96f16d8) | 13:34 UTC |
+| `parental-consent-revoke` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (636b5679) | 13:34 UTC |
+| `safety-event-ingest` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (f12cae93) | 13:34 UTC |
+| `safety-rule-evaluate` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (b99d4293) | 13:34 UTC |
+| `safety-rules-write` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (8ceafd02) | 13:34 UTC |
+| `safety-alert-dispatch` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (7066db26) | 13:34 UTC |
+| `safety-step-up` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (577338ca) | 13:34 UTC |
+| `safety-aggregates-refresh` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (b954b72b) | 13:35 UTC |
+| `safety-retention-cleanup` | v19 | `true` ⚠️ | **v20** | **`false`** ✅ | ❌ Não (ebe71501) | 13:35 UTC |
+
+**Resumo da mitigação**:
+- 14/14 funções com `verify_jwt: false` restaurado ✅.
+- 14/14 funções com versão incrementada novamente (esperado: o CLI sempre cria nova versão por deploy).
+- 14/14 funções com hash byte-identical (apenas metadata `verify_jwt` flipada) ✅.
+- 14/14 funções com `updated_at` recente (intervalo: 2026-05-08 13:33–13:35 UTC, ~2 minutos para todas).
+- Convenção do projeto restaurada: 14 funções de Consent/Safety + 19 outras = 33 funções com `verify_jwt: false`. **HML 100% padronizado.**
+
+#### Schema/data integrity pós-mitigação (SQL read-only via MCP)
+
+Mesma bateria do §0.3, re-executada após mitigação:
+
+| Métrica | Valor | Status |
+|---|---|---|
+| `migration_count` | 29 | ✅ |
+| `tables_total_in_public` | 64 | ✅ (sem mudança) |
+| `consent_tables_present` | YES | ✅ |
+| `safety_tables_present` | YES | ✅ |
+| `tenants_count` | 1 | ✅ inalterado |
+| `applications_count` | 1 | ✅ inalterado |
+| `parental_consent_requests_count` | 2 | ✅ smoke artifacts preservados |
+| `safety_events_count` | 1 | ✅ inalterado |
+| `safety_rules_count_global` | 5 | ✅ seed inalterado |
+| `consent_text_versions_count` | 1 | ✅ |
+| `has_017_policy_self` | YES | ✅ |
+| `rls_enabled_consent_tables` (prefixo `parental_consent%`) | 4 | ✅ (`requests`, `consents`, `revocations`, `tokens`) |
+| `rls_enabled_safety_tables` (prefixo `safety_%`) | 8 | ✅ todas as 8 tabelas Safety |
+
+**Schema, dados, RLS preservados.** Mitigação foi exclusivamente em metadata de auth das edge functions (verify_jwt), sem qualquer outra mudança.
+
+### 0.6. Status checklist consolidado
 
 - [x] Pré-flight (main em c868312, tests 351/351, HML migrations alinhadas).
 - [x] BEFORE state das 14 edge functions capturado (§2).
 - [x] Workflow criado (PR #64).
 - [x] Plan doc criado.
-- [x] **Deploy executado pelo operador via CLI local.**
-- [x] **POST state validado por Claude via MCP** (versions, hashes, updated_at). 14/14 incrementadas.
-- [x] **Schema/data integrity validados via MCP SQL read-only.** Nenhuma alteração indevida.
-- [x] **Achado `verify_jwt: true` documentado.** Recomendação de mitigação proposta (não executada).
-- [ ] **Pendente: confirmar regressão `verify_jwt` via curl + decidir mitigação.**
-- [ ] Smoke tests cURL pelo operador (provavelmente bloqueados se 401 confirmado).
-- [ ] Smoke tests UI pelo operador (provavelmente bloqueados se 401 confirmado).
-- [ ] Update do workflow PR #64 com `--no-verify-jwt`.
+- [x] **Deploy inicial executado pelo operador via CLI local.**
+- [x] **POST state inicial validado por Claude via MCP** (versions, hashes, updated_at). 14/14 incrementadas.
+- [x] **Achado `verify_jwt: true` (regressão) documentado.**
+- [x] **Mitigação `verify_jwt` executada pelo operador com `--no-verify-jwt`.**
+- [x] **POST mitigação validado por Claude via MCP**: 14/14 com `verify_jwt: false`, schema/data preservados.
+- [ ] **Update do workflow PR #64 com `--no-verify-jwt`** (em progresso, ver §0.7).
+- [ ] **Smoke tests cURL pelo operador** (lista no §0.8).
+- [ ] **Smoke tests UI pelo operador** (lista no §0.9).
+
+### 0.7. Atualização do PR #64 (workflow GitHub Action)
+
+O workflow `.github/workflows/deploy-hml-edge-functions.yml` no PR #64 será atualizado para incluir `--no-verify-jwt` em cada `supabase functions deploy`, evitando que futuros disparos do workflow re-introduzam a mesma regressão. Update commitado no próprio PR #64.
+
+### 0.8. Smoke tests cURL para o operador rodar (com tenant API key)
+
+A mitigação removeu o bloqueio de auth. Agora os smoke tests devem funcionar normalmente. Lista mínima (mais detalhes em §5.2 deste relatório):
+
+#### Pré-requisitos (no terminal do operador, **não commitar**)
+
+```bash
+export BASE_URL=https://wljedzqgprkpqhuazdzv.functions.supabase.co
+export TENANT_API_KEY=<sua tenant API key de HML>
+export ANON_KEY=<anon publishable de HML, opcional>
+export APPLICATION_ID=<UUID da application em HML>
+export USER_REF=smoke-$(date +%s)
+export ACTOR_REF_HMAC=$(echo -n "actor-smoke" | sha256sum | cut -d' ' -f1)
+export COUNTERPARTY_REF_HMAC=$(echo -n "counterparty-smoke" | sha256sum | cut -d' ' -f1)
+export CHILD_REF_HMAC=$(echo -n "child-smoke" | sha256sum | cut -d' ' -f1)
+export DEV_CONTACT_VALUE="dev-test-$(date +%s)@agekey.example"
+```
+
+#### Comandos prioritários
+
+1. **Confirmar mitigação `verify_jwt`** (1 chamada simples):
+   ```bash
+   curl -i -H "X-AgeKey-API-Key: $TENANT_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"policy_slug":"dev-13-plus","child_ref_hmac":"deadbeef0000000000000000000000000000000000000000000000000000beef"}' \
+     "$BASE_URL/parental-consent-session"
+   ```
+   Esperado: **HTTP 200** com body contendo `consent_request_id`, `guardian_panel_url`, `consent_text_*`, `decision_envelope`. Se receber 401: regressão volta. Se receber 200: ✅ mitigação OK.
+
+2. **Smoke completo Consent**:
+   ```bash
+   bash scripts/smoke/consent-smoke.sh
+   ```
+   Cobre 7 endpoints + verificações de privacidade.
+
+3. **Smoke completo Safety**:
+   ```bash
+   bash scripts/smoke/safety-smoke.sh
+   ```
+   Cobre 7 endpoints + 9 testes negativos automatizados (privacy guard rejeita raw content / PII).
+
+4. **Smoke Core (regressão)**:
+   ```bash
+   bash scripts/smoke/core-smoke.sh
+   ```
+
+#### Critérios de aceite
+
+- [ ] consent-session retorna HTTP 200 com `decision_envelope` no body.
+- [ ] Body de `parental-consent-session` **NÃO contém** PII (email, phone, cpf, name, birthdate em texto plano).
+- [ ] safety-event-ingest com payload limpo retorna HTTP 200 + `decision`.
+- [ ] safety-event-ingest com `message`, `raw_text`, `image`, `birthdate`, `email`, etc. retorna **HTTP 400** com `reason_code: SAFETY_RAW_CONTENT_REJECTED` ou `SAFETY_PII_DETECTED`.
+- [ ] revoke + token-verify subsequente: `valid=false, revoked=true, reason_code=TOKEN_REVOKED`.
+- [ ] Audit events crescem em `audit_events_2026_05` por cada operação realizada (verificável via SQL).
+
+### 0.9. Smoke tests UI para o operador rodar (browser)
+
+| # | Página | Esperado |
+|---|---|---|
+| 1 | login no painel admin HML | login bem-sucedido → dashboard, **sem redirect-loop em `/onboarding`** |
+| 2 | navegação `/dashboard` | KPIs e sidebar carregam |
+| 3 | `/applications` | lista de applications do tenant; sem 500 |
+| 4 | `/policies` | 10 policies seed visíveis |
+| 5 | `/(app)/consent` ou `/parental-consent/<id>` | painel parental carrega |
+| 6 | `/(app)/safety` | overview Safety |
+| 7 | `/(app)/safety/rules` | 5 regras seed |
+| 8 | `/(app)/safety/alerts` | tela carrega (provavelmente vazia em HML) |
+
+Sem 500. Sem regressão em rotas pré-existentes. Se algo falhar, salvar console + Network e reportar.
 
 ## 1. Pré-flight (todos ✅)
 
