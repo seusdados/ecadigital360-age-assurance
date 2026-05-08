@@ -1,52 +1,128 @@
 # HML — Edge Functions redeploy + smoke tests
 
-> **Status atual**: ⏸ Workflow GitHub Action **criado** (PR #64), aguardando:
-> 1. Configuração de `SUPABASE_ACCESS_TOKEN` em GitHub Secrets pelo operador.
-> 2. Disparo manual do workflow `Deploy HML Edge Functions`.
-> 3. Smoke tests cURL e UI pelo operador.
+> **Status atual**: ✅ Deploy HML **concluído pelo operador via Supabase CLI local**. POST state validado via MCP `list_edge_functions`. ⚠️ **Atenção**: o flag `verify_jwt` flipou de `false` → `true` em todas as 14 funções (provável regressão — ver §0.4).
 >
-> Deploy ainda **NÃO executado**. PROD intocada.
->
-> Ambiente: HML apenas (`wljedzqgprkpqhuazdzv`).
+> Ambiente: HML apenas (`wljedzqgprkpqhuazdzv`). PROD intocada.
 > Commit `main` usado: `c868312053ce182f9cd971408609ccbf5c426366`.
-> Data: 2026-05-08.
+> Data deploy operador: 2026-05-08 ~13:23 UTC.
+> Data validação POST: 2026-05-08.
 > Branch: `claude/hml-edge-redeploy-and-smoke-report`.
 
-## 0. Update — workflow GitHub Action substitui CLI local
+## 0. Update — deploy concluído via CLI local pelo operador
 
-A abordagem original (operador rodar `supabase functions deploy` no notebook) **não é mais viável** — operador sem notebook. Foi substituída por workflow manual em GitHub Actions, criado em PR #64:
+Operador conseguiu acesso ao notebook e rodou os 14 `supabase functions deploy --project-ref wljedzqgprkpqhuazdzv` localmente. **GitHub Action de PR #64 não foi necessária para este deploy** mas permanece útil para futuras operações remote-only.
 
-- Arquivo: `.github/workflows/deploy-hml-edge-functions.yml`
-- Plan doc: `docs/audit/hml-edge-functions-github-actions-deploy-plan.md`
-- Trigger: manual (`workflow_dispatch`) com input `confirm_hml_deploy = "DEPLOY_HML_EDGE_FUNCTIONS"`
-- Secret: `SUPABASE_ACCESS_TOKEN` (único)
-- Defesas: HML hardcoded com guard, function-by-function, fail-fast
+### 0.1. Confirmações do operador (mensagem da sessão)
 
-**Esta seção §0 substitui o §3 e o §4 abaixo no que se refere a "como executar". Os §1, §2, §5, §6, §7, §8 (estado pré-flight, BEFORE state, smoke tests, princípios, riscos) continuam válidos.**
+- ❌ Não tocou em PROD.
+- ❌ Não rodou `db push`, `migration repair`, `db reset`, `db pull`.
+- ❌ Não alterou schema, migrations, RLS ou feature flags.
+- ✅ Apenas `supabase functions deploy <fn> --project-ref wljedzqgprkpqhuazdzv` por função.
+- ✅ `supabase migration list` pós-deploy: Local = Remote (000–017 + 020–030).
 
-### 0.1. Próximos passos para o operador
+### 0.2. POST state — versões e hashes (capturados via MCP `list_edge_functions`)
 
-1. Mergear PR #64 (workflow + plan).
-2. Configurar repo secret `SUPABASE_ACCESS_TOKEN` em https://github.com/seusdados/ecadigital360-age-assurance/settings/secrets/actions.
-3. Disparar o workflow em https://github.com/seusdados/ecadigital360-age-assurance/actions → "Deploy HML Edge Functions" → Run workflow → digitar `DEPLOY_HML_EDGE_FUNCTIONS`.
-4. Aguardar conclusão (~15–30 min para 14 functions).
-5. Avisar Claude para validar via MCP `list_edge_functions`.
-6. Rodar smoke tests cURL com tenant API key (§5.2 abaixo).
-7. Validar UI HML (§5.3 abaixo).
+| Function | BEFORE | AFTER | Hash mudou? | `verify_jwt` BEFORE | `verify_jwt` AFTER | updated_at |
+|---|---|---|---|---|---|---|
+| `parental-consent-session` | v19 (`72ea25c9`) | **v20** (`08697655`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:23 UTC |
+| `parental-consent-guardian-start` | v18 (`71756cfa`) | **v19** (`cf6bdc18`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:23 UTC |
+| `parental-consent-confirm` | v18 (`643ec99b`) | **v19** (`2e55c99b`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:23 UTC |
+| `parental-consent-session-get` | v18 (`0edc9108`) | **v19** (`d3129989`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:23 UTC |
+| `parental-consent-text-get` | v18 (`86d23580`) | **v19** (`c6b1ac9b`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `parental-consent-token-verify` | v18 (`260e75c2`) | **v19** (`b96f16d8`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `parental-consent-revoke` | v18 (`e316c231`) | **v19** (`636b5679`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `safety-event-ingest` | v18 (`6777cf1e`) | **v19** (`f12cae93`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `safety-rule-evaluate` | v18 (`7541c262`) | **v19** (`b99d4293`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `safety-rules-write` | v18 (`8ceafd02`) | **v19** (`8ceafd02`) | ⚠️ Não (idêntico) | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `safety-alert-dispatch` | v18 (`7066db26`) | **v19** (`7066db26`) | ⚠️ Não (idêntico) | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `safety-step-up` | v18 (`577338ca`) | **v19** (`577338ca`) | ⚠️ Não (idêntico) | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `safety-aggregates-refresh` | v18 (`b954b72b`) | **v19** (`b954b72b`) | ⚠️ Não (idêntico) | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
+| `safety-retention-cleanup` | v18 (`28d000da`) | **v19** (`ebe71501`) | ✅ Sim | `false` | **`true` ⚠️** | 2026-05-08 13:24 UTC |
 
-### 0.2. Status checklist consolidado
+**Resumo**:
+- 14/14 funções com **versão incrementada** ✅.
+- 14/14 funções com **`updated_at` recente** (intervalo: 2026-05-08 13:23–13:24 UTC, ~60 segundos para todas) ✅.
+- **10/14 com hash novo** ✅ (parental-consent-* todas, safety-event-ingest, safety-rule-evaluate, safety-retention-cleanup).
+- **4/14 com hash idêntico**: `safety-rules-write`, `safety-alert-dispatch`, `safety-step-up`, `safety-aggregates-refresh`. Explicação esperada: nenhum dos 3 arquivos modificados em PR #61 (`rule-engine.ts`, `subject-resolver.ts`, `safety-retention-cleanup/index.ts`) está na cadeia transitiva de imports diretos dessas 4 funções, então o bundle binário ficou byte-identical. O CLI mesmo assim cria nova versão (v19) e atualiza `updated_at`. **Comportamento esperado, não é falha.**
+- **14/14 com `verify_jwt: true`** — ⚠️ ver §0.4 abaixo.
+
+### 0.3. Schema/data integrity validation (SQL read-only via MCP)
+
+| Métrica | Esperado | Obtido | Status |
+|---|---|---|---|
+| `migration_count` | 29 | 29 | ✅ |
+| `consent_tables_present` | YES | YES | ✅ |
+| `safety_tables_present` | YES | YES | ✅ |
+| `tenants_count` | 1 | 1 | ✅ |
+| `applications_count` | 1 | 1 | ✅ |
+| `parental_consent_requests_count` | 2 (smoke tests anteriores) | 2 | ✅ |
+| `safety_events_count` | 1 | 1 | ✅ |
+| `safety_rules_count_global` | 5 (seed) | 5 | ✅ |
+| `consent_text_versions_count` | 1 | 1 | ✅ |
+| `has_017_policy_self` | YES (PR #46 → main → HML em 06/05) | YES | ✅ |
+
+**Schema, dados e RLS preservados.** Nenhuma alteração feita pelo deploy. ✅
+
+### 0.4. ⚠️ Achado: `verify_jwt` flipou de `false` para `true` nas 14 funções
+
+#### O que mudou
+
+Antes do deploy (capturado em §2 deste relatório, snapshot do início da sessão), todas as 14 funções tinham `verify_jwt: false`. Após o deploy via CLI, todas as 14 estão com `verify_jwt: true`.
+
+#### Por que isso é provavelmente uma regressão
+
+1. **Convenção do projeto**: as outras 19 funções não-Consent/Safety em HML (`verifications-*`, `applications-*`, `policies-*`, `issuers-*`, `audit-list`, `tenant-bootstrap`, `webhooks-worker`, `jwks`, etc.) **continuam com `verify_jwt: false`**. As 14 funções deployadas hoje agora estão fora do padrão.
+2. **Modelo de auth do AgeKey**: as edge functions de Consent e Safety autenticam via `X-AgeKey-API-Key` header (auth próprio implementado em `_shared/auth.ts`, sem dependência do Supabase Auth). Não exigem JWT do Supabase Auth.
+3. **Comportamento do Supabase com `verify_jwt: true`**: a plataforma rejeita a request **antes** de chegar no código da função se não houver `Authorization: Bearer <jwt>` válido (assinado pela mesma instância Supabase). Tenants enviando apenas `X-AgeKey-API-Key` agora vão receber **HTTP 401** em todas as 14 rotas.
+
+#### Causa raiz provável
+
+`supabase functions deploy <fn>` **sem** o flag `--no-verify-jwt` define `verify_jwt=true` por default no CLI moderno. O deploy P0 original (em 2026-05-06) deve ter usado `--no-verify-jwt` (ou variante equivalente, ou tinha um config file que setava isso). O deploy de hoje aparentemente não passou esse flag.
+
+#### Mitigação proposta (NÃO executada)
+
+Operador roda novamente, com flag explícito:
+
+```bash
+for fn in \
+  parental-consent-session parental-consent-guardian-start parental-consent-confirm \
+  parental-consent-session-get parental-consent-text-get parental-consent-token-verify \
+  parental-consent-revoke \
+  safety-event-ingest safety-rule-evaluate safety-rules-write safety-alert-dispatch \
+  safety-step-up safety-aggregates-refresh safety-retention-cleanup
+do
+  supabase functions deploy "$fn" \
+    --project-ref wljedzqgprkpqhuazdzv \
+    --no-verify-jwt
+done
+```
+
+Cada função receberá uma nova `version` (v20 para `parental-consent-session`, v20 para as outras 13) com `verify_jwt: false` restaurado. Bundle byte-identical para 13 delas (apenas metadata de auth muda).
+
+#### Antes de executar a mitigação — confirmar
+
+- [ ] **Confirmar** que a integração HML real usa `X-AgeKey-API-Key` e não JWT Supabase. Revisar `supabase/functions/_shared/auth.ts` (já está em main commit `c868312`).
+- [ ] **Smoke test rápido** com flag atual: `curl -i -H "X-AgeKey-API-Key: ..." https://wljedzqgprkpqhuazdzv.functions.supabase.co/parental-consent-session ...` — se retornar 401 com mensagem do Supabase Auth (não da função), a regressão está confirmada.
+- [ ] **Decidir**: re-deploy com `--no-verify-jwt` (recomendado, restaura padrão) ou reescrever as 14 funções para também aceitar JWT (mudança arquitetural, não recomendado nesta janela).
+
+#### Atualizar o workflow do PR #64 também
+
+O workflow `.github/workflows/deploy-hml-edge-functions.yml` (PR #64) deve ser atualizado para incluir `--no-verify-jwt` em cada `supabase functions deploy`, evitando que futuros disparos do workflow re-introduzam a mesma regressão. Recomendo isso como segundo PR no PR #64 antes do merge.
+
+### 0.5. Status checklist consolidado
 
 - [x] Pré-flight (main em c868312, tests 351/351, HML migrations alinhadas).
 - [x] BEFORE state das 14 edge functions capturado (§2).
 - [x] Workflow criado (PR #64).
 - [x] Plan doc criado.
-- [ ] PR #64 mergeado.
-- [ ] Secret `SUPABASE_ACCESS_TOKEN` configurado pelo operador.
-- [ ] Workflow disparado.
-- [ ] POST state validado por Claude via MCP.
-- [ ] Smoke tests cURL pelo operador.
-- [ ] Smoke tests UI pelo operador.
-- [ ] Update final deste relatório com resultados.
+- [x] **Deploy executado pelo operador via CLI local.**
+- [x] **POST state validado por Claude via MCP** (versions, hashes, updated_at). 14/14 incrementadas.
+- [x] **Schema/data integrity validados via MCP SQL read-only.** Nenhuma alteração indevida.
+- [x] **Achado `verify_jwt: true` documentado.** Recomendação de mitigação proposta (não executada).
+- [ ] **Pendente: confirmar regressão `verify_jwt` via curl + decidir mitigação.**
+- [ ] Smoke tests cURL pelo operador (provavelmente bloqueados se 401 confirmado).
+- [ ] Smoke tests UI pelo operador (provavelmente bloqueados se 401 confirmado).
+- [ ] Update do workflow PR #64 com `--no-verify-jwt`.
 
 ## 1. Pré-flight (todos ✅)
 
