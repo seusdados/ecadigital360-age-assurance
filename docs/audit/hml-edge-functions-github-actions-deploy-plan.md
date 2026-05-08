@@ -112,6 +112,8 @@ Em ordem de execução (function-by-function, sem wildcard):
 
 Cada deploy é um step próprio do GitHub Actions, com `set -euo pipefail` implícito. Falha em qualquer step **interrompe** o workflow (semântica padrão do GitHub Actions: steps subsequentes são pulados).
 
+**Importante — flag `--no-verify-jwt`**: cada `supabase functions deploy` no workflow inclui esse flag. Sem ele, o CLI define `verify_jwt=true` por padrão, fazendo o Supabase platform retornar HTTP 401 **antes** de chegar no código da função (porque AgeKey usa autenticação própria via `X-AgeKey-API-Key` em `_shared/auth.ts`, não JWT do Supabase Auth). Este flag foi adicionado após a regressão observada no deploy CLI local em 2026-05-08 ~13:23 UTC e mitigada às 13:33 UTC. Ver PR #63 §0.4–0.6 para detalhes da regressão e validação pós-mitigação.
+
 ## 8. O que o workflow NÃO faz
 
 - ❌ **Não toca em PROD.** O project ref está hardcoded como `wljedzqgprkpqhuazdzv` (HML) e há um step defensivo que aborta se `SUPABASE_PROJECT_REF` for diferente.

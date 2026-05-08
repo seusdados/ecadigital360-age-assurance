@@ -101,79 +101,87 @@ jobs:
       - name: Print Supabase CLI version
         run: supabase --version
 
+      # All 14 deploys below use `--no-verify-jwt`. AgeKey Consent and Safety
+      # functions authenticate via X-AgeKey-API-Key header (own auth model
+      # in supabase/functions/_shared/auth.ts), NOT via Supabase JWT.
+      # Without this flag the CLI defaults verify_jwt to true, which makes
+      # the Supabase platform return HTTP 401 before requests reach the
+      # function. See PR #63 §0.4–0.6 for the regression that motivated
+      # adding this flag, and the post-mitigation validation.
+
       # ----- Consent: 7 functions -----
 
       - name: Deploy parental-consent-session
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy parental-consent-session --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy parental-consent-session --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy parental-consent-guardian-start
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy parental-consent-guardian-start --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy parental-consent-guardian-start --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy parental-consent-confirm
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy parental-consent-confirm --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy parental-consent-confirm --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy parental-consent-session-get
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy parental-consent-session-get --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy parental-consent-session-get --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy parental-consent-text-get
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy parental-consent-text-get --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy parental-consent-text-get --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy parental-consent-token-verify
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy parental-consent-token-verify --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy parental-consent-token-verify --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy parental-consent-revoke
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy parental-consent-revoke --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy parental-consent-revoke --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       # ----- Safety: 7 functions -----
 
       - name: Deploy safety-event-ingest
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy safety-event-ingest --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy safety-event-ingest --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy safety-rule-evaluate
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy safety-rule-evaluate --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy safety-rule-evaluate --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy safety-rules-write
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy safety-rules-write --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy safety-rules-write --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy safety-alert-dispatch
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy safety-alert-dispatch --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy safety-alert-dispatch --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy safety-step-up
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy safety-step-up --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy safety-step-up --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy safety-aggregates-refresh
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy safety-aggregates-refresh --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy safety-aggregates-refresh --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Deploy safety-retention-cleanup
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy safety-retention-cleanup --project-ref "$SUPABASE_PROJECT_REF"
+        run: supabase functions deploy safety-retention-cleanup --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
 
       - name: Summary
         run: |
