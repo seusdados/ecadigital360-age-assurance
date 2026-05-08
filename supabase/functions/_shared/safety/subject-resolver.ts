@@ -10,6 +10,12 @@ export interface SafetySubjectResolved {
   age_state: SafetySubjectAgeState;
   reports_count: number;
   alerts_count: number;
+  /**
+   * HMAC opaco do subject — repassado de volta para que callers (ex.:
+   * safety-event-ingest invocando consent-check) possam usar uma
+   * referência estável sem depender do UUID interno.
+   */
+  subject_ref_hmac: string;
 }
 
 export async function upsertSafetySubject(
@@ -25,7 +31,7 @@ export async function upsertSafetySubject(
   // Tenta SELECT primeiro (idempotente sem atualizar campos sensíveis).
   const { data: existing } = await client
     .from('safety_subjects')
-    .select('id, age_state, reports_count, alerts_count')
+    .select('id, age_state, reports_count, alerts_count, subject_ref_hmac')
     .eq('tenant_id', args.tenantId)
     .eq('application_id', args.applicationId)
     .eq('subject_ref_hmac', args.subjectRefHmac)
@@ -50,6 +56,7 @@ export async function upsertSafetySubject(
         age_state: args.ageState,
         reports_count: (existing as { reports_count: number }).reports_count,
         alerts_count: (existing as { alerts_count: number }).alerts_count,
+        subject_ref_hmac: args.subjectRefHmac,
       };
     }
     // Apenas refresh last_seen.
@@ -69,7 +76,7 @@ export async function upsertSafetySubject(
       age_state: args.ageState ?? 'unknown',
       assurance_level: args.assuranceLevel ?? null,
     })
-    .select('id, age_state, reports_count, alerts_count')
+    .select('id, age_state, reports_count, alerts_count, subject_ref_hmac')
     .single();
   if (error || !created) {
     throw error ?? new Error('Failed to upsert safety_subject');

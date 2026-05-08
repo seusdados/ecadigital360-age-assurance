@@ -54,6 +54,7 @@ serve(async (req) => {
     const batchSize = flags.retentionCleanupBatchSize;
 
     // Sinaliza ao trigger que este DELETE é cleanup autorizado.
+    // Esta GUC só pode ser ligada por este job; é desligada num finally.
     await client.rpc('set_config' as never, {
       setting_name: 'agekey.retention_cleanup',
       new_value: 'on',
@@ -61,11 +62,49 @@ serve(async (req) => {
     } as never);
 
     let totalDeleted = 0;
-    const perClass: Array<{ class: string; deleted: number }> = [];
+    let totalLegalHoldSkipped = 0;
+    const perClass: Array<{
+      class: string;
+      deleted: number;
+      legal_hold_skipped: number;
+    }> = [];
+    const legalHoldTenants = new Set<string>();
 
-    for (const [retClass, days] of Object.entries(RETENTION_CLASS_TO_DAYS)) {
+    try {
+      for (const [retClass, days] of Object.entries(RETENTION_CLASS_TO_DAYS)) {
       if (retClass === 'no_store' || days === 0) continue;
       const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+
+      // Conta primeiro quantas linhas estão sob legal_hold para auditar
+      // a operação como SKIP (RETENTION_LEGAL_HOLD_ACTIVE).
+      const { count: legalHoldCount } = await client
+        .from('safety_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('retention_class', retClass)
+        .eq('legal_hold', true)
+        .lt('occurred_at', cutoff);
+      const skipped = legalHoldCount ?? 0;
+      if (skipped > 0) {
+        // Captura tenants afetados para auditoria detalhada.
+        const { data: heldRows } = await client
+          .from('safety_events')
+          .select('tenant_id')
+          .eq('retention_class', retClass)
+          .eq('legal_hold', true)
+          .lt('occurred_at', cutoff)
+          .limit(batchSize);
+        for (const r of (heldRows as Array<{ tenant_id: string }> | null) ?? []) {
+          legalHoldTenants.add(r.tenant_id);
+        }
+        totalLegalHoldSkipped += skipped;
+        log.info('safety_retention_legal_hold_skip', {
+          fn: FN,
+          trace_id,
+          retention_class: retClass,
+          legal_hold_skipped: skipped,
+          reason_code: 'RETENTION_LEGAL_HOLD_ACTIVE',
+        });
+      }
 
       const { data: candidates } = await client
         .from('safety_events')
@@ -79,7 +118,11 @@ serve(async (req) => {
         (candidates as Array<{ id: string; tenant_id: string }> | null) ?? []
       ).map((c) => c.id);
       if (ids.length === 0) {
-        perClass.push({ class: retClass, deleted: 0 });
+        perClass.push({
+          class: retClass,
+          deleted: 0,
+          legal_hold_skipped: skipped,
+        });
         continue;
       }
 
@@ -117,19 +160,53 @@ serve(async (req) => {
       }
 
       totalDeleted += ids.length;
-      perClass.push({ class: retClass, deleted: ids.length });
+      perClass.push({
+        class: retClass,
+        deleted: ids.length,
+        legal_hold_skipped: skipped,
+      });
+    }
+
+      // Auditoria por tenant para SKIP de legal_hold.
+      for (const tenantId of legalHoldTenants) {
+        await writeAuditEvent(client, {
+          tenantId,
+          actorType: 'cron',
+          action: 'safety.retention_cleanup.legal_hold_skip',
+          resourceType: 'safety_events',
+          diff: {
+            reason_code: 'RETENTION_LEGAL_HOLD_ACTIVE',
+            total_legal_hold_skipped: totalLegalHoldSkipped,
+          },
+        });
+      }
+    } finally {
+      // Sempre desliga a GUC ao final, com ou sem erro, para que
+      // qualquer DELETE subsequente fora deste job seja barrado pelo
+      // trigger safety_events_no_mutation.
+      await client.rpc('set_config' as never, {
+        setting_name: 'agekey.retention_cleanup',
+        new_value: 'off',
+        is_local: false,
+      } as never);
     }
 
     log.info('safety_retention_cleanup_run', {
       fn: FN,
       trace_id,
       total_deleted: totalDeleted,
+      total_legal_hold_skipped: totalLegalHoldSkipped,
       per_class: perClass,
       status: 200,
     });
 
     return jsonResponse(
-      { ok: true, total_deleted: totalDeleted, per_class: perClass },
+      {
+        ok: true,
+        total_deleted: totalDeleted,
+        total_legal_hold_skipped: totalLegalHoldSkipped,
+        per_class: perClass,
+      },
       { origin: null },
     );
   } catch (err) {
