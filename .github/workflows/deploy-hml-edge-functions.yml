@@ -1,0 +1,204 @@
+name: Deploy HML Edge Functions
+
+# Manual-only workflow. Deploys the 14 Consent + Safety Edge Functions to
+# the HML Supabase project (wljedzqgprkpqhuazdzv) ONE BY ONE, after
+# operator confirmation via the workflow_dispatch input.
+#
+# This workflow is intentionally:
+#   - Manual-only (no push/pull_request triggers).
+#   - Scoped to HML — the project ref is hardcoded with a defensive
+#     equality check; if anyone forks this and changes the env var to a
+#     different ref, the validation step below MUST also be updated.
+#   - Single-purpose — does NOT run migrations, does NOT touch schema,
+#     does NOT touch feature flags, does NOT run smoke tests.
+#   - Function-by-function — explicit step per function, no wildcard.
+#   - Fail-fast — any failed step aborts the run; default GitHub Actions
+#     step semantics ensure subsequent steps are skipped.
+#
+# Required GitHub repository secret:
+#   - SUPABASE_ACCESS_TOKEN: a personal access token from
+#     https://supabase.com/dashboard/account/tokens. Do NOT use:
+#       - service_role JWT
+#       - DB password
+#       - tenant API keys
+#       - Vercel tokens
+#
+# To trigger:
+#   1. Go to GitHub Actions → "Deploy HML Edge Functions" → Run workflow
+#   2. Type DEPLOY_HML_EDGE_FUNCTIONS into the confirmation input.
+#   3. Submit.
+#
+# See docs/audit/hml-edge-functions-github-actions-deploy-plan.md for full
+# context, including post-deploy verification.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_hml_deploy:
+        description: 'Type DEPLOY_HML_EDGE_FUNCTIONS to confirm. HML only — never PROD.'
+        required: true
+        type: string
+
+# Minimal permissions. Workflow only reads repo content and uses a secret
+# to call Supabase API; it does not write to GitHub.
+permissions:
+  contents: read
+
+env:
+  # Hardcoded HML project ref. CHANGING THIS is a security event.
+  SUPABASE_PROJECT_REF: wljedzqgprkpqhuazdzv
+
+jobs:
+  deploy-hml-edge-functions:
+    name: Deploy 14 Consent + Safety functions to HML
+    runs-on: ubuntu-latest
+    # Defense-in-depth: even if someone bypasses the runtime confirmation
+    # check, this `if` ensures the entire job is skipped unless the input
+    # matches exactly.
+    if: github.event.inputs.confirm_hml_deploy == 'DEPLOY_HML_EDGE_FUNCTIONS'
+
+    steps:
+      - name: Validate confirmation input (runtime guard)
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.confirm_hml_deploy }}" != "DEPLOY_HML_EDGE_FUNCTIONS" ]; then
+            echo "::error::Confirmation input does not match. Aborting."
+            exit 1
+          fi
+          echo "Confirmation OK."
+
+      - name: Validate target project ref is HML (defensive guard)
+        run: |
+          set -euo pipefail
+          if [ "$SUPABASE_PROJECT_REF" != "wljedzqgprkpqhuazdzv" ]; then
+            echo "::error::SUPABASE_PROJECT_REF is not HML. Refusing to proceed."
+            echo "::error::Expected: wljedzqgprkpqhuazdzv"
+            echo "::error::Got: $SUPABASE_PROJECT_REF"
+            exit 1
+          fi
+          echo "Project ref confirmed as HML: $SUPABASE_PROJECT_REF"
+
+      - name: Validate SUPABASE_ACCESS_TOKEN secret is present
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN secret is not configured."
+            echo "::error::Set it in repo Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "SUPABASE_ACCESS_TOKEN present (length redacted)."
+
+      - name: Checkout repository (full source for CLI bundling)
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Print Supabase CLI version
+        run: supabase --version
+
+      # ----- Consent: 7 functions -----
+
+      - name: Deploy parental-consent-session
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy parental-consent-session --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy parental-consent-guardian-start
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy parental-consent-guardian-start --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy parental-consent-confirm
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy parental-consent-confirm --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy parental-consent-session-get
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy parental-consent-session-get --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy parental-consent-text-get
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy parental-consent-text-get --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy parental-consent-token-verify
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy parental-consent-token-verify --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy parental-consent-revoke
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy parental-consent-revoke --project-ref "$SUPABASE_PROJECT_REF"
+
+      # ----- Safety: 7 functions -----
+
+      - name: Deploy safety-event-ingest
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy safety-event-ingest --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy safety-rule-evaluate
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy safety-rule-evaluate --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy safety-rules-write
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy safety-rules-write --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy safety-alert-dispatch
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy safety-alert-dispatch --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy safety-step-up
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy safety-step-up --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy safety-aggregates-refresh
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy safety-aggregates-refresh --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Deploy safety-retention-cleanup
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy safety-retention-cleanup --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Summary
+        run: |
+          set -euo pipefail
+          echo "=========================================="
+          echo "Deploy run completed."
+          echo "Target HML project: $SUPABASE_PROJECT_REF"
+          echo "Functions deployed (in order):"
+          echo "  1. parental-consent-session"
+          echo "  2. parental-consent-guardian-start"
+          echo "  3. parental-consent-confirm"
+          echo "  4. parental-consent-session-get"
+          echo "  5. parental-consent-text-get"
+          echo "  6. parental-consent-token-verify"
+          echo "  7. parental-consent-revoke"
+          echo "  8. safety-event-ingest"
+          echo "  9. safety-rule-evaluate"
+          echo " 10. safety-rules-write"
+          echo " 11. safety-alert-dispatch"
+          echo " 12. safety-step-up"
+          echo " 13. safety-aggregates-refresh"
+          echo " 14. safety-retention-cleanup"
+          echo
+          echo "Next steps (manual):"
+          echo "  - Verify versions/hashes via MCP list_edge_functions."
+          echo "  - Run smoke tests (scripts/smoke/{consent,safety}-smoke.sh)."
+          echo "  - Confirm UI in HML admin panel."
+          echo "=========================================="
