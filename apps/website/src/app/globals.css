@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* AgeKey public site theme — institutional, privacy-first.
+ * Default palette is "bone": warm light, calm, technical.
+ * Dark mode uses the obsidian palette from the admin product.
+ */
+
+@layer base {
+  :root {
+    --background: 38 30% 97%;
+    --foreground: 220 22% 12%;
+    --muted: 38 22% 92%;
+    --muted-foreground: 220 8% 38%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 22% 12%;
+    --border: 38 18% 86%;
+    --input: 38 18% 90%;
+    --ring: 36 80% 46%;
+    --primary: 220 22% 12%;
+    --primary-foreground: 38 30% 97%;
+    --accent: 36 80% 56%;
+    --accent-foreground: 220 22% 12%;
+    --success: 142 50% 32%;
+    --success-foreground: 38 30% 97%;
+    --warning: 36 80% 38%;
+    --warning-foreground: 38 30% 97%;
+    --radius: 0.625rem;
+  }
+
+  [data-theme='dark'] {
+    --background: 220 13% 7%;
+    --foreground: 30 18% 92%;
+    --muted: 220 12% 12%;
+    --muted-foreground: 30 8% 65%;
+    --card: 220 13% 9%;
+    --card-foreground: 30 18% 92%;
+    --border: 220 10% 18%;
+    --input: 220 10% 16%;
+    --ring: 36 80% 56%;
+    --primary: 36 80% 56%;
+    --primary-foreground: 220 13% 7%;
+    --accent: 36 80% 56%;
+    --accent-foreground: 220 13% 7%;
+    --success: 142 50% 48%;
+    --success-foreground: 220 13% 7%;
+    --warning: 36 90% 60%;
+    --warning-foreground: 220 13% 7%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html[data-theme='dark'] {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: hsl(var(--accent) / 0.35);
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer components {
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+    padding: 0.75rem 1rem;
+    z-index: 100;
+  }
+
+  .skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+  }
+
+  .prose-tight p {
+    margin-bottom: 1rem;
+  }
+
+  .gradient-soft {
+    background:
+      radial-gradient(60% 60% at 20% 0%, hsl(var(--accent) / 0.18) 0%, transparent 60%),
+      radial-gradient(40% 40% at 100% 100%, hsl(var(--primary) / 0.06) 0%, transparent 70%);
+  }
+
+  .code-block {
+    background: hsl(220 22% 10%);
+    color: hsl(30 18% 92%);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    overflow-x: auto;
+  }
+
+  .code-block .tok-key { color: hsl(36 80% 70%); }
+  .code-block .tok-str { color: hsl(142 45% 65%); }
+  .code-block .tok-num { color: hsl(200 70% 70%); }
+  .code-block .tok-com { color: hsl(220 6% 55%); font-style: italic; }
+}
