@@ -123,7 +123,7 @@ export const DecisionEnvelopeSchema = z
     actions: z.array(z.string().min(1).max(64)).max(32).optional(),
     step_up_required: z.boolean().optional(),
     parental_consent_required: z.boolean().optional(),
-    expires_at: z.string().datetime().optional(),
+    expires_at: z.string().datetime({ offset: true }).optional(),
     ttl_seconds: z.number().int().positive().optional(),
     content_included: z.literal(false),
     pii_included: z.literal(false),
