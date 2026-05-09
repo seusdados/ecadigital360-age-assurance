@@ -92,4 +92,52 @@ describe('Decision Envelope — formato canônico', () => {
     expect(isPendingDecision('step_up_required')).toBe(true);
     expect(isPendingDecision('approved')).toBe(false);
   });
+
+  describe('expires_at — datetime com timezone offset (RFC 3339)', () => {
+    function build(expiresAt: string) {
+      return createDecisionEnvelope({
+        decision_domain: 'parental_consent',
+        decision: 'pending_guardian',
+        reason_code: 'CONSENT_PENDING_GUARDIAN',
+        expires_at: expiresAt,
+      });
+    }
+
+    it('aceita formato Z (UTC)', () => {
+      const env = build('2026-05-10T12:59:51.658Z');
+      expect(env.expires_at).toBe('2026-05-10T12:59:51.658Z');
+    });
+
+    it('aceita offset +00:00 (Postgres timestamptz UTC)', () => {
+      const env = build('2026-05-10T12:59:51.658+00:00');
+      expect(env.expires_at).toBe('2026-05-10T12:59:51.658+00:00');
+    });
+
+    it('aceita offset positivo não-UTC', () => {
+      const env = build('2026-05-10T12:59:51.658+02:00');
+      expect(env.expires_at).toBe('2026-05-10T12:59:51.658+02:00');
+    });
+
+    it('aceita offset negativo', () => {
+      const env = build('2026-05-10T09:59:51.658-03:00');
+      expect(env.expires_at).toBe('2026-05-10T09:59:51.658-03:00');
+    });
+
+    it('aceita formato sem milissegundos', () => {
+      const env = build('2026-05-10T12:59:51+00:00');
+      expect(env.expires_at).toBe('2026-05-10T12:59:51+00:00');
+    });
+
+    it('rejeita string que não é datetime ISO 8601', () => {
+      expect(() => build('not-a-datetime')).toThrow();
+    });
+
+    it('rejeita formato com espaço no lugar do T', () => {
+      expect(() => build('2026-05-10 12:59:51+00:00')).toThrow();
+    });
+
+    it('rejeita timestamp sem timezone (naive)', () => {
+      expect(() => build('2026-05-10T12:59:51')).toThrow();
+    });
+  });
 });
