@@ -2,73 +2,407 @@ import type { SVGProps } from 'react';
 import { MotionStyle } from './MotionStyle';
 import { ak, svgText } from './theme';
 
-export default function HeroAgeEligibilityIllustration({ className, ...props }: SVGProps<SVGSVGElement>) {
+/**
+ * Hero illustration — mockup-grade story in three panes:
+ *
+ *   [ Platform UI ]  →  [ AgeKey shield ]  →  [ Result UI ]
+ *
+ * The two side panes are stylized device screens (window chrome, URL pill,
+ * divider, content area) so the diagram reads as an actual product flow,
+ * not an abstract schematic. Typography is locked to 3 sizes (10/11/14)
+ * for legibility at the hero column width (~470px on desktop).
+ */
+export default function HeroAgeEligibilityIllustration({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 960 560"
+      viewBox="0 0 560 400"
       role="img"
-      aria-label="Fluxo AgeKey: plataforma envia política etária e recebe decisão mínima sem dados civis"
+      aria-label="Sua plataforma envia uma política etária ao AgeKey e recebe uma decisão mínima sem identidade civil"
       className={`ak-svg-root h-auto w-full ${className ?? ''}`}
       style={svgText}
       {...props}
     >
       <MotionStyle />
-      <rect width="960" height="560" rx="28" fill={ak.background} />
-      <circle cx="805" cy="90" r="128" fill={ak.accent} opacity="0.08" className="ak-breathe" />
-      <circle cx="110" cy="456" r="96" fill={ak.primary} opacity="0.04" />
 
-      <g className="ak-soft-card">
-        <rect x="72" y="116" width="250" height="280" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="104" y="160" fill={ak.foreground} fontSize="26" fontWeight="700">Sua plataforma</text>
-        <text x="104" y="190" fill={ak.mutedForeground} fontSize="16">site, app ou comunidade</text>
-        <rect x="104" y="236" width="188" height="86" rx="12" fill={ak.muted} stroke={ak.border} />
-        <rect x="126" y="260" width="90" height="9" rx="5" fill={ak.mutedForeground} opacity="0.22" />
-        <rect x="126" y="283" width="132" height="9" rx="5" fill={ak.mutedForeground} opacity="0.16" />
-        <rect x="104" y="342" width="138" height="34" rx="9" fill={ak.accent} opacity="0.16" />
-        <text x="122" y="364" fill={ak.foreground} fontSize="17" fontWeight="700">policy 18+</text>
+      <defs>
+        <marker
+          id="ak-hero-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerUnits="userSpaceOnUse"
+          markerWidth="8"
+          markerHeight="8"
+          orient="auto"
+        >
+          <path d="M0 0 L9 5 L0 10 Z" fill={ak.foreground} />
+        </marker>
+      </defs>
+
+      {/* Soft accent halo */}
+      <circle
+        cx="280"
+        cy="190"
+        r="180"
+        fill={ak.accent}
+        opacity="0.07"
+        className="ak-breathe"
+      />
+
+      {/* ── LEFT: platform screen ───────────────────────────────── */}
+      <g className="ak-card">
+        {/* Device frame */}
+        <rect
+          x="20"
+          y="56"
+          width="160"
+          height="288"
+          rx="18"
+          fill={ak.card}
+          stroke={ak.border}
+        />
+        {/* Inner screen */}
+        <rect
+          x="28"
+          y="64"
+          width="144"
+          height="272"
+          rx="12"
+          fill={ak.background}
+        />
+        {/* Window controls */}
+        <circle cx="40" cy="80" r="3" fill={ak.foreground} opacity="0.4" />
+        <circle cx="50" cy="80" r="3" fill={ak.foreground} opacity="0.22" />
+        <circle cx="60" cy="80" r="3" fill={ak.foreground} opacity="0.22" />
+        {/* URL pill */}
+        <rect x="76" y="74" width="84" height="12" rx="6" fill={ak.muted} />
+        {/* Divider */}
+        <line
+          x1="36"
+          y1="96"
+          x2="164"
+          y2="96"
+          stroke={ak.border}
+          strokeWidth="1"
+        />
+
+        {/* Headline */}
+        <text
+          x="100"
+          y="124"
+          textAnchor="middle"
+          fill={ak.foreground}
+          fontSize="14"
+          fontWeight="700"
+        >
+          Acesso restrito
+        </text>
+        <text
+          x="100"
+          y="142"
+          textAnchor="middle"
+          fill={ak.mutedForeground}
+          fontSize="11"
+        >
+          conteúdo 18+
+        </text>
+
+        {/* Lock glyph */}
+        <g transform="translate(76 160)">
+          <rect width="48" height="44" rx="9" fill={ak.muted} />
+          <rect
+            x="14"
+            y="20"
+            width="20"
+            height="16"
+            rx="2.5"
+            fill={ak.foreground}
+          />
+          <path
+            d="M18 20 v-6 a6 6 0 0 1 12 0 v6"
+            fill="none"
+            stroke={ak.foreground}
+            strokeWidth="2.2"
+          />
+        </g>
+
+        {/* Policy chip */}
+        <rect
+          x="44"
+          y="222"
+          width="112"
+          height="32"
+          rx="16"
+          fill={ak.foreground}
+        />
+        <text
+          x="100"
+          y="242"
+          textAnchor="middle"
+          fill={ak.background}
+          fontSize="13"
+          fontWeight="800"
+        >
+          policy 18+
+        </text>
+        <text
+          x="100"
+          y="270"
+          textAnchor="middle"
+          fill={ak.mutedForeground}
+          fontSize="10"
+        >
+          regra da plataforma
+        </text>
+
+        {/* CTA */}
+        <rect
+          x="44"
+          y="288"
+          width="112"
+          height="32"
+          rx="9"
+          fill={ak.accent}
+          opacity="0.18"
+        />
+        <rect
+          x="44"
+          y="288"
+          width="112"
+          height="32"
+          rx="9"
+          fill="none"
+          stroke={ak.accent}
+          strokeOpacity="0.4"
+        />
+        <text
+          x="100"
+          y="308"
+          textAnchor="middle"
+          fill={ak.foreground}
+          fontSize="11"
+          fontWeight="700"
+        >
+          verificar idade
+        </text>
       </g>
 
-      <path d="M322 256 C386 256 408 256 460 256" fill="none" stroke={ak.accent} strokeWidth="2.2" className="ak-flow-line" />
-      <circle cx="362" cy="256" r="5" fill={ak.accent} className="ak-pulse" />
-      <text x="360" y="236" fill={ak.mutedForeground} fontSize="15" textAnchor="middle">política etária</text>
+      {/* Connector left → shield */}
+      <line
+        x1="184"
+        y1="200"
+        x2="218"
+        y2="200"
+        stroke={ak.foreground}
+        strokeOpacity="0.25"
+        strokeWidth="1.5"
+      />
+      <line
+        x1="184"
+        y1="200"
+        x2="218"
+        y2="200"
+        stroke={ak.accent}
+        strokeWidth="1.5"
+        strokeDasharray="2 5"
+        className="ak-flow-line"
+        markerEnd="url(#ak-hero-arrow)"
+      />
 
-      <g className="ak-float-slow">
-        <circle cx="480" cy="256" r="92" fill={ak.card} stroke={ak.border} strokeWidth="1.4" />
-        <circle cx="480" cy="256" r="60" fill={ak.accent} opacity="0.12" />
-        <path d="M480 182 L535 204 V250 C535 294 512 326 480 342 C448 326 425 294 425 250 V204 Z" fill={ak.primary} />
-        <path d="M458 254 L474 270 L506 228" fill="none" stroke={ak.accent} strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" />
-        <text x="480" y="378" fill={ak.foreground} fontSize="22" fontWeight="800" textAnchor="middle">AgeKey</text>
-        <text x="480" y="404" fill={ak.mutedForeground} fontSize="15" textAnchor="middle">minimiza e assina</text>
+      {/* ── CENTER: AgeKey shield ───────────────────────────────── */}
+      <g transform="translate(224 132)" className="ak-float-slow">
+        <circle
+          cx="56"
+          cy="60"
+          r="58"
+          fill={ak.background}
+          stroke={ak.border}
+        />
+        <circle cx="56" cy="60" r="42" fill={ak.accent} opacity="0.18" />
+        <path
+          d="M56 30 L82 42 V68 C82 88 71 104 56 112 C41 104 30 88 30 68 V42 Z"
+          fill={ak.foreground}
+        />
+        <path
+          d="M44 64 l9 9 17 -23"
+          fill="none"
+          stroke={ak.accent}
+          strokeWidth="5"
+          className="ak-check-pop"
+        />
+        <text
+          x="56"
+          y="148"
+          textAnchor="middle"
+          fill={ak.foreground}
+          fontSize="14"
+          fontWeight="800"
+        >
+          AgeKey
+        </text>
+        <text
+          x="56"
+          y="166"
+          textAnchor="middle"
+          fill={ak.mutedForeground}
+          fontSize="10"
+        >
+          minimiza · assina
+        </text>
       </g>
 
-      <path d="M560 256 C620 256 638 256 690 256" fill="none" stroke={ak.accent} strokeWidth="2.2" className="ak-flow-line" />
-      <circle cx="636" cy="256" r="5" fill={ak.accent} className="ak-pulse" />
-      <text x="626" y="236" fill={ak.mutedForeground} fontSize="15" textAnchor="middle">decisão mínima</text>
+      {/* Connector shield → right */}
+      <line
+        x1="342"
+        y1="200"
+        x2="376"
+        y2="200"
+        stroke={ak.foreground}
+        strokeOpacity="0.25"
+        strokeWidth="1.5"
+      />
+      <line
+        x1="342"
+        y1="200"
+        x2="376"
+        y2="200"
+        stroke={ak.accent}
+        strokeWidth="1.5"
+        strokeDasharray="2 5"
+        className="ak-flow-line"
+        markerEnd="url(#ak-hero-arrow)"
+      />
 
-      <g className="ak-soft-card">
-        <rect x="690" y="116" width="250" height="280" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="724" y="160" fill={ak.foreground} fontSize="26" fontWeight="700">Resultado</text>
-        <text x="724" y="190" fill={ak.mutedForeground} fontSize="16">sem identidade civil</text>
-        <rect x="724" y="236" width="154" height="34" rx="9" fill={ak.success} opacity="0.12" />
-        <circle cx="742" cy="253" r="5" fill={ak.success} className="ak-pulse" />
-        <text x="760" y="259" fill={ak.foreground} fontSize="16" fontWeight="700">approved</text>
-        <rect x="724" y="286" width="130" height="34" rx="9" fill={ak.muted} stroke={ak.border} />
-        <text x="744" y="308" fill={ak.mutedForeground} fontSize="15">denied</text>
-        <rect x="724" y="336" width="174" height="34" rx="9" fill={ak.muted} stroke={ak.border} />
-        <text x="744" y="358" fill={ak.mutedForeground} fontSize="15">needs_review</text>
+      {/* ── RIGHT: result screen ────────────────────────────────── */}
+      <g className="ak-card">
+        <rect
+          x="380"
+          y="56"
+          width="160"
+          height="288"
+          rx="18"
+          fill={ak.card}
+          stroke={ak.border}
+        />
+        <rect
+          x="388"
+          y="64"
+          width="144"
+          height="272"
+          rx="12"
+          fill={ak.background}
+        />
+        <circle cx="400" cy="80" r="3" fill={ak.foreground} opacity="0.4" />
+        <circle cx="410" cy="80" r="3" fill={ak.foreground} opacity="0.22" />
+        <circle cx="420" cy="80" r="3" fill={ak.foreground} opacity="0.22" />
+        <rect x="436" y="74" width="84" height="12" rx="6" fill={ak.muted} />
+        <line
+          x1="396"
+          y1="96"
+          x2="524"
+          y2="96"
+          stroke={ak.border}
+          strokeWidth="1"
+        />
+
+        {/* Success badge */}
+        <g transform="translate(424 116)">
+          <circle cx="36" cy="36" r="36" fill={ak.success} opacity="0.14" />
+          <path
+            d="M22 38 l10 10 20 -26"
+            fill="none"
+            stroke={ak.success}
+            strokeWidth="5"
+            className="ak-check-pop"
+          />
+        </g>
+
+        <text
+          x="460"
+          y="212"
+          textAnchor="middle"
+          fill={ak.foreground}
+          fontSize="16"
+          fontWeight="800"
+        >
+          Aprovado
+        </text>
+        <text
+          x="460"
+          y="230"
+          textAnchor="middle"
+          fill={ak.mutedForeground}
+          fontSize="11"
+        >
+          decisão assinada
+        </text>
+
+        {/* Token row */}
+        <rect
+          x="404"
+          y="252"
+          width="112"
+          height="30"
+          rx="8"
+          fill={ak.muted}
+        />
+        <circle cx="418" cy="267" r="4" fill={ak.accent} className="ak-pulse" />
+        <text
+          x="428"
+          y="271"
+          fill={ak.foreground}
+          fontSize="11"
+          fontWeight="700"
+        >
+          token assinado
+        </text>
+
+        {/* Expiry chip */}
+        <rect
+          x="404"
+          y="290"
+          width="112"
+          height="24"
+          rx="6"
+          fill="none"
+          stroke={ak.border}
+          strokeDasharray="3 3"
+        />
+        <text
+          x="460"
+          y="306"
+          textAnchor="middle"
+          fill={ak.mutedForeground}
+          fontSize="10"
+        >
+          expira em 24h
+        </text>
       </g>
 
-      <g transform="translate(178 448)">
-        <rect width="584" height="56" rx="14" fill={ak.card} stroke={ak.border} />
-        {['nome', 'documento', 'data de nascimento', 'selfie'].map((label, i) => (
-          <g key={label} transform={`translate(${28 + i * 140} 16)`} className={`ak-reveal-${i + 1}`}>
-            <rect width="118" height="24" rx="7" fill={ak.muted} stroke={ak.border} />
-            <path d="M14 12 h15" stroke={ak.warning} strokeWidth="2" strokeLinecap="round" />
-            <path d="M21 5 v14" stroke={ak.warning} strokeWidth="2" strokeLinecap="round" />
-            <text x="38" y="17" fill={ak.mutedForeground} fontSize="13">{label}</text>
-          </g>
-        ))}
-      </g>
+      {/* ── Footnote: data NOT shared ──────────────────────────── */}
+      <text
+        x="280"
+        y="368"
+        textAnchor="middle"
+        fill={ak.mutedForeground}
+        fontSize="9"
+        fontWeight="700"
+        letterSpacing="0.12em"
+      >
+        NUNCA COMPARTILHADO
+      </text>
+      <text
+        x="280"
+        y="386"
+        textAnchor="middle"
+        fill={ak.mutedForeground}
+        fontSize="11"
+      >
+        nome · documento · data de nascimento · selfie
+      </text>
     </svg>
   );
 }
