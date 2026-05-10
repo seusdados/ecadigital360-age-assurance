@@ -34,7 +34,7 @@ async function loadJwksPublic(client: ReturnType<typeof db>): Promise<
     .from('crypto_keys')
     .select('kid, public_jwk_json')
     .eq('status', 'active')
-    .order('rotated_at', { ascending: false });
+    .order('activated_at', { ascending: false });
   if (error) throw error;
   return (data ?? []).map((row) => ({
     kid: row.kid as string,
