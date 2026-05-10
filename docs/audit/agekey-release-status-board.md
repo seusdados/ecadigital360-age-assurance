@@ -227,3 +227,43 @@ Nenhum desses entra na janela Consent atual.
 | Data UTC | Commit | Alteração |
 |---|---|---|
 | 2026-05-10 | `f4ddcb91` (após PR #78) | Versão inicial do status board. |
+| 2026-05-10 | `aca35891` (após PR #83) | Pacote governance automation completo: executive go/no-go pack, readiness board, execution runbook, rollback runbook, smoke test pack, ADR e governance automation report. |
+| 2026-05-10 | `0cd4d8e` (após PR #82) | Polishings website (não afeta Consent/Safety). |
+
+---
+
+## 12. Estado pós-PR #83 (atualizado)
+
+### 12.1. Resumo
+
+- **Main**: `aca35891d8e2f5ee46d7580fc60bbc44a1d4a81c` ou descendente.
+- **PR #83 (governance automation)**: ✅ mergeado.
+- **Consent PROD**: 🟡 **GO WITH CONDITIONS** (camada técnica pronta; 10 bloqueadores de governança pendentes).
+- **Safety PROD**: ❌ **Not scheduled** (fora desta janela).
+- **PROD/HML nesta rodada**: intocados.
+
+### 12.2. 10 bloqueadores de governança pendentes para abrir janela Consent PROD
+
+1. Provider OTP real configurado em PROD (Twilio/Mailgun/SES/etc.)
+2. Decisão executiva: tenant interno `dev` vs piloto externo
+3. RIPD AgeKey Consent v1 assinado pelo DPO
+4. Memo executivo assinado por PO + DPO + Tech Lead
+5. Janela de manutenção UTC definida
+6. Operador responsável nomeado
+7. Plantão DBA on-call
+8. Backup PROD < 24h (no momento da janela)
+9. Workflow GHA PROD criado **OU** plano CLI documentado
+10. `AGEKEY_PARENTAL_CONSENT_PANEL_BASE_URL` PROD definida
+
+### 12.3. Pacote documental consolidado em main
+
+| Eixo | Documento |
+|---|---|
+| Índice consolidado | `docs/release/README.md` (este pacote) |
+| Executive Go/No-Go | `docs/release/prod-consent-mvp-executive-go-no-go-pack.md` |
+| Readiness board (25 itens) | `docs/audit/prod-consent-release-readiness-board.md` |
+| Execution runbook | `docs/release/prod-consent-mvp-execution-runbook.md` |
+| Rollback runbook | `docs/release/prod-consent-mvp-rollback-runbook.md` |
+| Smoke test pack | `docs/release/prod-consent-mvp-smoke-test-pack.md` |
+| ADR | `docs/adr/ADR-AGEKEY-CONSENT-PROD-RELEASE.md` |
+| Governance automation report | `docs/audit/prod-consent-release-governance-automation-report.md` |
