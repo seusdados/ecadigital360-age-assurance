@@ -5,6 +5,7 @@ import { siteCopy } from '@/content/site';
 import { PageHero } from '@/components/ui/PageHero';
 import { Section, SectionHeader } from '@/components/ui/Section';
 import { Card } from '@/components/ui/Card';
+import { IllustrationFrame, UseCasesNetworkIllustration } from '@/components/illustrations';
 
 export const metadata: Metadata = {
   title: 'Soluções AgeKey | Verificação Etária para Plataformas Digitais',
@@ -22,6 +23,12 @@ export default function SolutionsPage() {
         subtitle={c.hero.subtitle}
         primaryCta={c.hero.cta}
       />
+
+      <Section>
+        <IllustrationFrame size="md">
+          <UseCasesNetworkIllustration />
+        </IllustrationFrame>
+      </Section>
 
       <Section>
         <SectionHeader title="Encontre o caminho para seu produto" />

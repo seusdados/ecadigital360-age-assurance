@@ -3,6 +3,11 @@ import { siteCopy } from '@/content/site';
 import { PageHero } from '@/components/ui/PageHero';
 import { Section, SectionHeader } from '@/components/ui/Section';
 import { Card } from '@/components/ui/Card';
+import {
+  ComplianceWithoutIdentityDiagram,
+  EvidenceAuditDiagram,
+  IllustrationFrame,
+} from '@/components/illustrations';
 
 export const metadata: Metadata = {
   title: 'Compliance AgeKey | Auditoria e Privacy by Design',
@@ -20,6 +25,12 @@ export default function CompliancePage() {
         subtitle={c.hero.subtitle}
         primaryCta={c.hero.cta}
       />
+
+      <Section>
+        <IllustrationFrame size="md">
+          <ComplianceWithoutIdentityDiagram />
+        </IllustrationFrame>
+      </Section>
 
       <Section>
         <SectionHeader title={c.governance.title} />
@@ -42,6 +53,11 @@ export default function CompliancePage() {
         <p className="mt-6 max-w-3xl rounded-md border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-foreground">
           {c.governance.footer}
         </p>
+        <div className="mt-12">
+          <IllustrationFrame size="md">
+            <EvidenceAuditDiagram />
+          </IllustrationFrame>
+        </div>
       </Section>
 
       <Section>
