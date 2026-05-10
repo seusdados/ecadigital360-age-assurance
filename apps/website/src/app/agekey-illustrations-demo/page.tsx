@@ -60,14 +60,15 @@ export default function AgeKeyIllustrationsDemoPage() {
         <p className="mt-5 max-w-3xl text-base text-muted-foreground md:text-md">
           Componentes React/SVG inline, sem dependências novas, usando variáveis do tema do AgeKey e respeitando prefers-reduced-motion.
         </p>
-        <div className="mt-12 grid gap-8">
+
+        <div className="mt-14 space-y-20">
           {illustrations.map(([name, Illustration]) => (
-            <article key={name} className="rounded-xl border border-border bg-card p-5 md:p-7">
-              <h2 className="text-base font-semibold text-foreground md:text-md">{name}</h2>
-              <div className="mt-5 overflow-hidden rounded-lg border border-border bg-background p-3">
-                <div className="mx-auto w-full max-w-3xl">
-                  <Illustration />
-                </div>
+            <article key={name}>
+              <div className="mb-4 flex items-baseline gap-3 border-b border-border pb-3">
+                <h2 className="font-mono text-sm font-medium text-foreground">{name}</h2>
+              </div>
+              <div className="mx-auto w-full max-w-5xl">
+                <Illustration />
               </div>
             </article>
           ))}
