@@ -64,8 +64,10 @@ export default function AgeKeyIllustrationsDemoPage() {
           {illustrations.map(([name, Illustration]) => (
             <article key={name} className="rounded-xl border border-border bg-card p-5 md:p-7">
               <h2 className="text-base font-semibold text-foreground md:text-md">{name}</h2>
-              <div className="mt-5 overflow-hidden rounded-lg border border-border bg-background">
-                <Illustration />
+              <div className="mt-5 overflow-hidden rounded-lg border border-border bg-background p-3">
+                <div className="mx-auto w-full max-w-3xl">
+                  <Illustration />
+                </div>
               </div>
             </article>
           ))}

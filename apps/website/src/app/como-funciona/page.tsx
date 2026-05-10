@@ -6,6 +6,7 @@ import { FeatureCard, StepCard } from '@/components/ui/Card';
 import { CodeBlock } from '@/components/ui/CodeBlock';
 import {
   FourStepVerificationFlow,
+  IllustrationFrame,
   MethodRouterDiagram,
   TokenAnatomyDiagram,
   TrustModelDiagram,
@@ -31,7 +32,9 @@ export default function HowItWorksPage() {
       <Section>
         <SectionHeader title={c.flow.title} />
         <div className="mb-10">
-          <FourStepVerificationFlow />
+          <IllustrationFrame size="lg">
+            <FourStepVerificationFlow />
+          </IllustrationFrame>
         </div>
         <ol className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {c.flow.steps.map((s) => (
@@ -51,7 +54,9 @@ export default function HowItWorksPage() {
             </p>
           </div>
           <div className="space-y-6">
-            <TokenAnatomyDiagram />
+            <IllustrationFrame size="sm">
+              <TokenAnatomyDiagram />
+            </IllustrationFrame>
             <CodeBlock
               language="json"
               caption="Payload público"
@@ -64,7 +69,9 @@ export default function HowItWorksPage() {
       <Section>
         <SectionHeader title={c.methods.title} lead={c.methods.lead} />
         <div className="mb-10">
-          <MethodRouterDiagram />
+          <IllustrationFrame size="md">
+            <MethodRouterDiagram />
+          </IllustrationFrame>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           {c.methods.items.map((m) => (
@@ -75,7 +82,9 @@ export default function HowItWorksPage() {
 
       <Section>
         <SectionHeader title="Modelo de confiança" />
-        <TrustModelDiagram />
+        <IllustrationFrame size="lg">
+          <TrustModelDiagram />
+        </IllustrationFrame>
       </Section>
     </>
   );

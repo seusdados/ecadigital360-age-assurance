@@ -5,6 +5,7 @@ import { Section, SectionHeader } from '@/components/ui/Section';
 import { Card } from '@/components/ui/Card';
 import {
   ForbiddenClaimsDiagram,
+  IllustrationFrame,
   NotKycComparisonDiagram,
   PrivacyArchitectureDiagram,
 } from '@/components/illustrations';
@@ -22,7 +23,9 @@ export default function PrivacyPage() {
       <PageHero title={c.hero.title} subtitle={c.hero.subtitle} primaryCta={c.hero.cta} />
 
       <Section>
-        <PrivacyArchitectureDiagram />
+        <IllustrationFrame size="lg">
+          <PrivacyArchitectureDiagram />
+        </IllustrationFrame>
       </Section>
 
       <Section id="nao-e-kyc">
@@ -52,14 +55,18 @@ export default function PrivacyPage() {
           ))}
         </div>
         <div className="mt-12">
-          <NotKycComparisonDiagram />
+          <IllustrationFrame size="md">
+            <NotKycComparisonDiagram />
+          </IllustrationFrame>
         </div>
       </Section>
 
       <Section>
         <SectionHeader title={c.forbidden.title} lead={c.forbidden.lead} />
         <div className="mb-10">
-          <ForbiddenClaimsDiagram />
+          <IllustrationFrame size="lg">
+            <ForbiddenClaimsDiagram />
+          </IllustrationFrame>
         </div>
         <div className="rounded-xl border border-border bg-card p-6">
           <ul className="flex flex-wrap gap-2">

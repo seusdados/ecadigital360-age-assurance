@@ -9,6 +9,7 @@ import {
   DeveloperIntegrationFlow,
   FourStepVerificationFlow,
   HeroAgeEligibilityIllustration,
+  IllustrationFrame,
   MethodRouterDiagram,
   NotKycComparisonDiagram,
   OvercollectionProblemDiagram,
@@ -48,7 +49,9 @@ export default function HomePage() {
               <p className="mt-5 text-sm text-muted-foreground">{c.hero.microcopy}</p>
             </div>
             <div className="lg:pl-4">
-              <HeroAgeEligibilityIllustration />
+              <IllustrationFrame size="sm">
+                <HeroAgeEligibilityIllustration />
+              </IllustrationFrame>
             </div>
           </div>
 
@@ -82,7 +85,9 @@ export default function HomePage() {
               {c.problem.footer}
             </p>
           </div>
-          <OvercollectionProblemDiagram />
+          <IllustrationFrame size="sm">
+            <OvercollectionProblemDiagram />
+          </IllustrationFrame>
         </div>
         <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {c.problem.cards.map((card) => (
@@ -125,7 +130,9 @@ export default function HomePage() {
           </Card>
         </div>
         <div className="mt-12">
-          <NotKycComparisonDiagram />
+          <IllustrationFrame size="md">
+            <NotKycComparisonDiagram />
+          </IllustrationFrame>
         </div>
       </Section>
 
@@ -133,7 +140,9 @@ export default function HomePage() {
       <Section>
         <SectionHeader eyebrow="Fluxo" title={c.steps.title} />
         <div className="mb-10">
-          <FourStepVerificationFlow />
+          <IllustrationFrame size="lg">
+            <FourStepVerificationFlow />
+          </IllustrationFrame>
         </div>
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {c.steps.items.map((s) => (
@@ -154,7 +163,9 @@ export default function HomePage() {
           ))}
         </div>
         <div className="mt-12">
-          <PolicyEngineDiagram />
+          <IllustrationFrame size="md">
+            <PolicyEngineDiagram />
+          </IllustrationFrame>
         </div>
       </Section>
 
@@ -166,7 +177,9 @@ export default function HomePage() {
           lead={c.modes.lead}
         />
         <div className="mb-10">
-          <MethodRouterDiagram />
+          <IllustrationFrame size="md">
+            <MethodRouterDiagram />
+          </IllustrationFrame>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           {c.modes.items.map((m) => (
@@ -203,7 +216,9 @@ export default function HomePage() {
             </div>
           </div>
           <div className="space-y-6">
-            <PrivacyArchitectureDiagram />
+            <IllustrationFrame size="sm">
+              <PrivacyArchitectureDiagram />
+            </IllustrationFrame>
             <ul className="space-y-3">
               {c.privacy.bullets.map((b) => (
                 <li
@@ -225,7 +240,9 @@ export default function HomePage() {
       {/* Developers */}
       <Section>
         <div className="mb-10">
-          <DeveloperIntegrationFlow />
+          <IllustrationFrame size="lg">
+            <DeveloperIntegrationFlow />
+          </IllustrationFrame>
         </div>
         <div className="grid gap-10 md:grid-cols-2 md:items-start">
           <div>
@@ -264,7 +281,9 @@ export default function HomePage() {
       <Section>
         <SectionHeader eyebrow="Casos de uso" title={c.useCases.title} />
         <div className="mb-10">
-          <UseCasesNetworkIllustration />
+          <IllustrationFrame size="md">
+            <UseCasesNetworkIllustration />
+          </IllustrationFrame>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {c.useCases.items.map((u) => (

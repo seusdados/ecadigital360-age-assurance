@@ -6,6 +6,7 @@ import { Card, FeatureCard } from '@/components/ui/Card';
 import { CodeBlock } from '@/components/ui/CodeBlock';
 import {
   DeveloperIntegrationFlow,
+  IllustrationFrame,
   PlatformArchitectureDiagram,
   TokenAnatomyDiagram,
   WebhookEventsFlow,
@@ -30,7 +31,9 @@ export default function DevelopersPage() {
       />
 
       <Section>
-        <DeveloperIntegrationFlow />
+        <IllustrationFrame size="lg">
+          <DeveloperIntegrationFlow />
+        </IllustrationFrame>
       </Section>
 
       <Section>
@@ -43,7 +46,9 @@ export default function DevelopersPage() {
           </div>
           <div className="space-y-6">
             <CodeBlock language="ts" code={c.integration.snippet} caption="SDK JS" />
-            <TokenAnatomyDiagram />
+            <IllustrationFrame size="sm">
+              <TokenAnatomyDiagram />
+            </IllustrationFrame>
           </div>
         </div>
       </Section>
@@ -81,7 +86,9 @@ export default function DevelopersPage() {
           </table>
         </div>
         <div className="mt-12">
-          <PlatformArchitectureDiagram />
+          <IllustrationFrame size="md">
+            <PlatformArchitectureDiagram />
+          </IllustrationFrame>
         </div>
       </Section>
 
@@ -93,7 +100,9 @@ export default function DevelopersPage() {
               <FeatureCard key={w.name} title={w.name} body={w.body} />
             ))}
           </div>
-          <WebhookEventsFlow />
+          <IllustrationFrame size="sm">
+            <WebhookEventsFlow />
+          </IllustrationFrame>
         </div>
       </Section>
 

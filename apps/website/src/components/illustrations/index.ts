@@ -1,3 +1,4 @@
+export { IllustrationFrame } from './IllustrationFrame';
 export { default as HeroAgeEligibilityIllustration } from './HeroAgeEligibilityIllustration';
 export { default as OvercollectionProblemDiagram } from './OvercollectionProblemDiagram';
 export { default as NotKycComparisonDiagram } from './NotKycComparisonDiagram';

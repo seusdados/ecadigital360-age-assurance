@@ -3,7 +3,7 @@ import { siteCopy } from '@/content/site';
 import { PageHero } from '@/components/ui/PageHero';
 import { Section } from '@/components/ui/Section';
 import { ContactForm } from '@/components/forms/ContactForm';
-import { SafeContactIllustration } from '@/components/illustrations';
+import { IllustrationFrame, SafeContactIllustration } from '@/components/illustrations';
 
 export const metadata: Metadata = {
   title: 'Contato | AgeKey',
@@ -24,7 +24,9 @@ export default function ContactPage() {
         <div className="grid gap-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
           <ContactForm source="contato" />
           <div className="hidden lg:block">
-            <SafeContactIllustration />
+            <IllustrationFrame size="sm">
+              <SafeContactIllustration />
+            </IllustrationFrame>
           </div>
         </div>
       </Section>

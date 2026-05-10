@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import {
   ComplianceWithoutIdentityDiagram,
   EvidenceAuditDiagram,
+  IllustrationFrame,
 } from '@/components/illustrations';
 
 export const metadata: Metadata = {
@@ -26,7 +27,9 @@ export default function CompliancePage() {
       />
 
       <Section>
-        <ComplianceWithoutIdentityDiagram />
+        <IllustrationFrame size="md">
+          <ComplianceWithoutIdentityDiagram />
+        </IllustrationFrame>
       </Section>
 
       <Section>
@@ -51,7 +54,9 @@ export default function CompliancePage() {
           {c.governance.footer}
         </p>
         <div className="mt-12">
-          <EvidenceAuditDiagram />
+          <IllustrationFrame size="md">
+            <EvidenceAuditDiagram />
+          </IllustrationFrame>
         </div>
       </Section>
 

@@ -5,7 +5,7 @@ import { PageHero } from '@/components/ui/PageHero';
 import { Section } from '@/components/ui/Section';
 import { Card } from '@/components/ui/Card';
 import { ButtonLink } from '@/components/ui/Button';
-import { PricingMaturityDiagram } from '@/components/illustrations';
+import { IllustrationFrame, PricingMaturityDiagram } from '@/components/illustrations';
 
 export const metadata: Metadata = {
   title: 'Preços AgeKey | Planos de Verificação Etária para Empresas',
@@ -26,7 +26,9 @@ export default function PricingPage() {
 
       <Section>
         <div className="mb-12">
-          <PricingMaturityDiagram />
+          <IllustrationFrame size="md">
+            <PricingMaturityDiagram />
+          </IllustrationFrame>
         </div>
         <div className="grid gap-5 md:grid-cols-3">
           {c.plans.map((plan) => (
