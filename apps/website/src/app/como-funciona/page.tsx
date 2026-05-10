@@ -4,6 +4,12 @@ import { PageHero } from '@/components/ui/PageHero';
 import { Section, SectionHeader } from '@/components/ui/Section';
 import { FeatureCard, StepCard } from '@/components/ui/Card';
 import { CodeBlock } from '@/components/ui/CodeBlock';
+import {
+  FourStepVerificationFlow,
+  MethodRouterDiagram,
+  TokenAnatomyDiagram,
+  TrustModelDiagram,
+} from '@/components/illustrations';
 
 export const metadata: Metadata = {
   title: 'Como funciona o AgeKey | Verificação Etária sem KYC',
@@ -24,6 +30,9 @@ export default function HowItWorksPage() {
 
       <Section>
         <SectionHeader title={c.flow.title} />
+        <div className="mb-10">
+          <FourStepVerificationFlow />
+        </div>
         <ol className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {c.flow.steps.map((s) => (
             <li key={s.n} className="list-none">
@@ -41,21 +50,32 @@ export default function HowItWorksPage() {
               {c.response.reinforce}
             </p>
           </div>
-          <CodeBlock
-            language="json"
-            caption="Payload público"
-            code={c.response.snippet}
-          />
+          <div className="space-y-6">
+            <TokenAnatomyDiagram />
+            <CodeBlock
+              language="json"
+              caption="Payload público"
+              code={c.response.snippet}
+            />
+          </div>
         </div>
       </Section>
 
       <Section>
         <SectionHeader title={c.methods.title} lead={c.methods.lead} />
+        <div className="mb-10">
+          <MethodRouterDiagram />
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           {c.methods.items.map((m) => (
             <FeatureCard key={m.title} title={m.title} body={m.body} />
           ))}
         </div>
+      </Section>
+
+      <Section>
+        <SectionHeader title="Modelo de confiança" />
+        <TrustModelDiagram />
       </Section>
     </>
   );

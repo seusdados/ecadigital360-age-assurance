@@ -4,6 +4,12 @@ import { PageHero } from '@/components/ui/PageHero';
 import { Section, SectionHeader } from '@/components/ui/Section';
 import { Card, FeatureCard } from '@/components/ui/Card';
 import { CodeBlock } from '@/components/ui/CodeBlock';
+import {
+  DeveloperIntegrationFlow,
+  PlatformArchitectureDiagram,
+  TokenAnatomyDiagram,
+  WebhookEventsFlow,
+} from '@/components/illustrations';
 
 export const metadata: Metadata = {
   title: 'AgeKey para Desenvolvedores | API, Widget e SDK de Age Assurance',
@@ -24,6 +30,10 @@ export default function DevelopersPage() {
       />
 
       <Section>
+        <DeveloperIntegrationFlow />
+      </Section>
+
+      <Section>
         <div className="grid gap-10 md:grid-cols-2 md:items-start">
           <div>
             <SectionHeader title={c.integration.title} />
@@ -31,7 +41,10 @@ export default function DevelopersPage() {
               {c.integration.footer}
             </p>
           </div>
-          <CodeBlock language="ts" code={c.integration.snippet} caption="SDK JS" />
+          <div className="space-y-6">
+            <CodeBlock language="ts" code={c.integration.snippet} caption="SDK JS" />
+            <TokenAnatomyDiagram />
+          </div>
         </div>
       </Section>
 
@@ -67,14 +80,20 @@ export default function DevelopersPage() {
             </tbody>
           </table>
         </div>
+        <div className="mt-12">
+          <PlatformArchitectureDiagram />
+        </div>
       </Section>
 
       <Section>
         <SectionHeader title={c.webhooks.title} />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {c.webhooks.items.map((w) => (
-            <FeatureCard key={w.name} title={w.name} body={w.body} />
-          ))}
+        <div className="grid gap-10 md:grid-cols-2 md:items-start">
+          <div className="grid gap-4 md:grid-cols-1">
+            {c.webhooks.items.map((w) => (
+              <FeatureCard key={w.name} title={w.name} body={w.body} />
+            ))}
+          </div>
+          <WebhookEventsFlow />
         </div>
       </Section>
 

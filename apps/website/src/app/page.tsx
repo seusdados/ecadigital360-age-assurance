@@ -5,6 +5,17 @@ import { Section, SectionHeader } from '@/components/ui/Section';
 import { Card, FeatureCard, StepCard } from '@/components/ui/Card';
 import { CodeBlock } from '@/components/ui/CodeBlock';
 import { FAQ } from '@/components/ui/FAQ';
+import {
+  DeveloperIntegrationFlow,
+  FourStepVerificationFlow,
+  HeroAgeEligibilityIllustration,
+  MethodRouterDiagram,
+  NotKycComparisonDiagram,
+  OvercollectionProblemDiagram,
+  PolicyEngineDiagram,
+  PrivacyArchitectureDiagram,
+  UseCasesNetworkIllustration,
+} from '@/components/illustrations';
 
 export default function HomePage() {
   const c = siteCopy.home;
@@ -14,26 +25,31 @@ export default function HomePage() {
       {/* Hero */}
       <section className="relative overflow-hidden gradient-soft border-b border-border/60">
         <div className="container py-20 md:py-28">
-          <div className="max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
-              {c.hero.eyebrow}
-            </p>
-            <h1 className="mt-4 text-3xl md:text-4xl font-semibold tracking-tight text-balance">
-              {c.hero.title}
-            </h1>
-            <p className="mt-6 text-base md:text-md text-muted-foreground max-w-2xl">
-              {c.hero.subtitle}
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              <ButtonLink href={c.hero.primaryCta.href} size="lg">
-                {c.hero.primaryCta.label}
-                <ArrowRight className="h-4 w-4" aria-hidden />
-              </ButtonLink>
-              <ButtonLink href={c.hero.secondaryCta.href} variant="secondary" size="lg">
-                {c.hero.secondaryCta.label}
-              </ButtonLink>
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-center">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+                {c.hero.eyebrow}
+              </p>
+              <h1 className="mt-4 text-3xl md:text-4xl font-semibold tracking-tight text-balance">
+                {c.hero.title}
+              </h1>
+              <p className="mt-6 text-base md:text-md text-muted-foreground">
+                {c.hero.subtitle}
+              </p>
+              <div className="mt-8 flex flex-col sm:flex-row gap-3">
+                <ButtonLink href={c.hero.primaryCta.href} size="lg">
+                  {c.hero.primaryCta.label}
+                  <ArrowRight className="h-4 w-4" aria-hidden />
+                </ButtonLink>
+                <ButtonLink href={c.hero.secondaryCta.href} variant="secondary" size="lg">
+                  {c.hero.secondaryCta.label}
+                </ButtonLink>
+              </div>
+              <p className="mt-5 text-sm text-muted-foreground">{c.hero.microcopy}</p>
             </div>
-            <p className="mt-5 text-sm text-muted-foreground">{c.hero.microcopy}</p>
+            <div className="lg:pl-4">
+              <HeroAgeEligibilityIllustration />
+            </div>
           </div>
 
           {/* Trust bar */}
@@ -59,10 +75,15 @@ export default function HomePage() {
 
       {/* Problem */}
       <Section>
-        <SectionHeader title={c.problem.title} lead={c.problem.body} />
-        <p className="max-w-3xl text-base md:text-md text-foreground">
-          {c.problem.footer}
-        </p>
+        <div className="grid gap-10 lg:grid-cols-2 lg:items-start">
+          <div>
+            <SectionHeader title={c.problem.title} lead={c.problem.body} />
+            <p className="text-base md:text-md text-foreground">
+              {c.problem.footer}
+            </p>
+          </div>
+          <OvercollectionProblemDiagram />
+        </div>
         <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {c.problem.cards.map((card) => (
             <FeatureCard key={card.title} title={card.title} body={card.body} />
@@ -103,11 +124,17 @@ export default function HomePage() {
             </p>
           </Card>
         </div>
+        <div className="mt-12">
+          <NotKycComparisonDiagram />
+        </div>
       </Section>
 
       {/* Steps */}
       <Section>
         <SectionHeader eyebrow="Fluxo" title={c.steps.title} />
+        <div className="mb-10">
+          <FourStepVerificationFlow />
+        </div>
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {c.steps.items.map((s) => (
             <StepCard key={s.n} n={s.n} title={s.title} body={s.body} />
@@ -126,6 +153,9 @@ export default function HomePage() {
             <FeatureCard key={f.title} title={f.title} body={f.body} />
           ))}
         </div>
+        <div className="mt-12">
+          <PolicyEngineDiagram />
+        </div>
       </Section>
 
       {/* Modes */}
@@ -135,6 +165,9 @@ export default function HomePage() {
           title={c.modes.title}
           lead={c.modes.lead}
         />
+        <div className="mb-10">
+          <MethodRouterDiagram />
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           {c.modes.items.map((m) => (
             <FeatureCard key={m.title} title={m.title} body={m.body} />
@@ -169,25 +202,31 @@ export default function HomePage() {
               </ButtonLink>
             </div>
           </div>
-          <ul className="space-y-3">
-            {c.privacy.bullets.map((b) => (
-              <li
-                key={b}
-                className="flex items-start gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm"
-              >
-                <span
-                  aria-hidden
-                  className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent"
-                />
-                <span className="text-foreground">{b}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-6">
+            <PrivacyArchitectureDiagram />
+            <ul className="space-y-3">
+              {c.privacy.bullets.map((b) => (
+                <li
+                  key={b}
+                  className="flex items-start gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm"
+                >
+                  <span
+                    aria-hidden
+                    className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent"
+                  />
+                  <span className="text-foreground">{b}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </Section>
 
       {/* Developers */}
       <Section>
+        <div className="mb-10">
+          <DeveloperIntegrationFlow />
+        </div>
         <div className="grid gap-10 md:grid-cols-2 md:items-start">
           <div>
             <SectionHeader eyebrow="Desenvolvedores" title={c.devSection.title} />
@@ -224,6 +263,9 @@ export default function HomePage() {
       {/* Use cases */}
       <Section>
         <SectionHeader eyebrow="Casos de uso" title={c.useCases.title} />
+        <div className="mb-10">
+          <UseCasesNetworkIllustration />
+        </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {c.useCases.items.map((u) => (
             <FeatureCard key={u.title} title={u.title} body={u.body} />

@@ -3,6 +3,11 @@ import { siteCopy } from '@/content/site';
 import { PageHero } from '@/components/ui/PageHero';
 import { Section, SectionHeader } from '@/components/ui/Section';
 import { Card } from '@/components/ui/Card';
+import {
+  ForbiddenClaimsDiagram,
+  NotKycComparisonDiagram,
+  PrivacyArchitectureDiagram,
+} from '@/components/illustrations';
 
 export const metadata: Metadata = {
   title: 'Privacidade no AgeKey | Prova Etária com Minimização de Dados',
@@ -15,6 +20,10 @@ export default function PrivacyPage() {
   return (
     <>
       <PageHero title={c.hero.title} subtitle={c.hero.subtitle} primaryCta={c.hero.cta} />
+
+      <Section>
+        <PrivacyArchitectureDiagram />
+      </Section>
 
       <Section id="nao-e-kyc">
         <SectionHeader title={c.notKyc.title} lead={c.notKyc.body} />
@@ -42,10 +51,16 @@ export default function PrivacyPage() {
             </Card>
           ))}
         </div>
+        <div className="mt-12">
+          <NotKycComparisonDiagram />
+        </div>
       </Section>
 
       <Section>
         <SectionHeader title={c.forbidden.title} lead={c.forbidden.lead} />
+        <div className="mb-10">
+          <ForbiddenClaimsDiagram />
+        </div>
         <div className="rounded-xl border border-border bg-card p-6">
           <ul className="flex flex-wrap gap-2">
             {c.forbidden.fields.map((f) => (
