@@ -19,6 +19,10 @@ import {
 import { log, newTraceId } from '../_shared/logger.ts';
 import { preflight } from '../_shared/cors.ts';
 import { readSafetyFlags } from '../_shared/safety/feature-flags.ts';
+import {
+  writeSafetyAudit,
+  type SafetyAuditAction,
+} from '../_shared/safety/audit.ts';
 import { SafetyAlertActionRequestSchema } from '../../../packages/shared/src/schemas/safety.ts';
 import { assertPayloadSafe } from '../../../packages/shared/src/privacy/index.ts';
 
@@ -115,10 +119,38 @@ serve(async (req) => {
       status: 200,
     });
 
-    return jsonResponse(
-      { id: alertId, status: newStatus },
-      { origin },
-    );
+    const auditAction: SafetyAuditAction = (() => {
+      switch (parsed.data.action) {
+        case 'acknowledge':
+          return 'safety.alert_acknowledged';
+        case 'escalate':
+          return 'safety.alert_escalated';
+        case 'resolve':
+          return 'safety.alert_resolved';
+        case 'dismiss':
+          return 'safety.alert_dismissed';
+      }
+    })();
+    await writeSafetyAudit({
+      client,
+      tenantId: principal.tenantId,
+      action: auditAction,
+      resourceType: 'safety_alert',
+      resourceId: alertId,
+      actorType: 'api_key',
+      actorId: null,
+      diff: {
+        // Note: free-text resolved_note is intentionally not propagated
+        // here — admin notes go to safety_alerts.resolved_note. The
+        // audit row stays metadata-only.
+      },
+      traceId: trace_id,
+      fn: FN,
+    });
+
+    const response = { id: alertId, status: newStatus };
+    assertPayloadSafe(response, 'public_api_response');
+    return jsonResponse(response, { origin });
   } catch (err) {
     return respondError(fnCtx, err);
   }

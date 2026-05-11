@@ -41,6 +41,7 @@ import {
   type RuleConfig,
 } from '../../../packages/shared/src/safety/index.ts';
 import { readSafetyFlags } from '../_shared/safety/feature-flags.ts';
+import { writeSafetyAudit } from '../_shared/safety/audit.ts';
 import { upsertSafetySubject } from '../_shared/safety/subject-resolver.ts';
 import {
   incrementAggregate,
@@ -320,24 +321,58 @@ serve(async (req) => {
           .eq('status', 'active')
           .limit(1)
           .maybeSingle();
+        let resolvedVersionId: string | null = null;
         if (policyRow) {
           const { data: versionRow } = await client
             .from('policy_versions')
             .select('id')
             .eq('policy_id', (policyRow as { id: string }).id)
             .eq('version', (policyRow as { current_version: number }).current_version)
-            .single();
+            .maybeSingle();
           if (versionRow) {
+            resolvedVersionId = (versionRow as { id: string }).id;
             const stepUp = await createStepUpSession(client, {
               tenantId: principal.tenantId,
               applicationId: principal.applicationId,
               policyId: (policyRow as { id: string }).id,
-              policyVersionId: (versionRow as { id: string }).id,
+              policyVersionId: resolvedVersionId,
               externalUserRef: counterparty?.id ?? actor.id,
               locale: input.locale ?? 'pt-BR',
             });
             stepUpSessionId = stepUp.session_id;
           }
+        }
+        if (!stepUpSessionId) {
+          // No active policy or version available — record an audit
+          // event so DPO/ops can see the rule fired but nothing was
+          // linked, instead of a silent no-op. Ingest continues.
+          log.warn('safety_step_up_skipped_no_policy', {
+            fn: FN,
+            trace_id,
+            tenant_id: principal.tenantId,
+            application_id: principal.applicationId,
+            event_id: eventId,
+          });
+          await writeSafetyAudit({
+            client,
+            tenantId: principal.tenantId,
+            action: 'safety.step_up_skipped_no_policy',
+            resourceType: 'safety_event',
+            resourceId: eventId,
+            actorType: 'api_key',
+            actorId: null,
+            diff: {
+              application_id: principal.applicationId,
+              event_id: eventId,
+              reason_code: 'SAFETY_STEP_UP_NO_ACTIVE_POLICY',
+              rule_code: evalResult.aggregated.triggered_rules[0] ?? null,
+              severity: evalResult.aggregated.severity,
+              risk_category: evalResult.aggregated.risk_category,
+              payload_hash: payloadHash,
+            },
+            traceId: trace_id,
+            fn: FN,
+          });
         }
       }
 
@@ -354,13 +389,14 @@ serve(async (req) => {
           .eq('status', 'active')
           .limit(1)
           .maybeSingle();
+        let resolvedConsentRequestId: string | null = null;
         if (policyRow) {
           const { data: versionRow } = await client
             .from('policy_versions')
             .select('id')
             .eq('policy_id', (policyRow as { id: string }).id)
             .eq('version', (policyRow as { current_version: number }).current_version)
-            .single();
+            .maybeSingle();
           const { data: ctvRow } = await client
             .from('consent_text_versions')
             .select('id')
@@ -383,7 +419,41 @@ serve(async (req) => {
               locale: input.locale ?? 'pt-BR',
             });
             parentalConsentRequestId = consent.consent_request_id;
+            resolvedConsentRequestId = consent.consent_request_id;
           }
+        }
+        if (!resolvedConsentRequestId) {
+          // No active policy / version / consent_text_version available —
+          // audit explicit skip so DPO/ops can detect missing setup.
+          // Ingest continues; the alert (if created below) records that
+          // parental consent could not be linked.
+          log.warn('safety_parental_consent_skipped_no_policy', {
+            fn: FN,
+            trace_id,
+            tenant_id: principal.tenantId,
+            application_id: principal.applicationId,
+            event_id: eventId,
+          });
+          await writeSafetyAudit({
+            client,
+            tenantId: principal.tenantId,
+            action: 'safety.parental_consent_skipped_no_policy',
+            resourceType: 'safety_event',
+            resourceId: eventId,
+            actorType: 'api_key',
+            actorId: null,
+            diff: {
+              application_id: principal.applicationId,
+              event_id: eventId,
+              reason_code: 'SAFETY_PARENTAL_CONSENT_NO_ACTIVE_POLICY',
+              rule_code: evalResult.aggregated.triggered_rules[0] ?? null,
+              severity: evalResult.aggregated.severity,
+              risk_category: evalResult.aggregated.risk_category,
+              payload_hash: payloadHash,
+            },
+            traceId: trace_id,
+            fn: FN,
+          });
         }
       }
 
@@ -411,6 +481,71 @@ serve(async (req) => {
         throw alertErr ?? new InternalError('Failed to create alert');
       }
       alertId = (alertRow as { id: string }).id;
+
+      await writeSafetyAudit({
+        client,
+        tenantId: principal.tenantId,
+        action: 'safety.alert_created',
+        resourceType: 'safety_alert',
+        resourceId: alertId,
+        actorType: 'api_key',
+        actorId: null,
+        diff: {
+          application_id: principal.applicationId,
+          event_id: eventId,
+          rule_code: primaryRuleCode,
+          reason_codes: evalResult.aggregated.reason_codes,
+          severity: evalResult.aggregated.severity,
+          risk_category: evalResult.aggregated.risk_category,
+          step_up_session_id: stepUpSessionId,
+          parental_consent_request_id: parentalConsentRequestId,
+          payload_hash: payloadHash,
+        },
+        traceId: trace_id,
+        fn: FN,
+      });
+
+      if (stepUpSessionId) {
+        await writeSafetyAudit({
+          client,
+          tenantId: principal.tenantId,
+          action: 'safety.step_up_linked',
+          resourceType: 'safety_alert',
+          resourceId: alertId,
+          actorType: 'api_key',
+          actorId: null,
+          diff: {
+            application_id: principal.applicationId,
+            event_id: eventId,
+            rule_code: primaryRuleCode,
+            severity: evalResult.aggregated.severity,
+            step_up_session_id: stepUpSessionId,
+          },
+          traceId: trace_id,
+          fn: FN,
+        });
+      }
+
+      if (parentalConsentRequestId) {
+        await writeSafetyAudit({
+          client,
+          tenantId: principal.tenantId,
+          action: 'safety.parental_consent_check_linked',
+          resourceType: 'safety_alert',
+          resourceId: alertId,
+          actorType: 'api_key',
+          actorId: null,
+          diff: {
+            application_id: principal.applicationId,
+            event_id: eventId,
+            rule_code: primaryRuleCode,
+            severity: evalResult.aggregated.severity,
+            parental_consent_request_id: parentalConsentRequestId,
+          },
+          traceId: trace_id,
+          fn: FN,
+        });
+      }
 
       // Atualiza counters do counterparty (que está no centro do alerta).
       if (counterparty) {
