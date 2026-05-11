@@ -26,7 +26,7 @@ export default function FourStepVerificationFlow({
     { n: '1', title: 'Criar sessão', body: 'política + contexto' },
     { n: '2', title: 'Escolher método', body: 'gateway · credencial · prova' },
     { n: '3', title: 'Provar o necessário', body: 'sem identidade civil' },
-    { n: '4', title: 'Receber resultado', body: 'token + decisão mínima' },
+    { n: '4', title: 'Receber resultado', body: 'comprovante + decisão mínima' },
   ];
 
   return (
@@ -159,7 +159,7 @@ function Step1Form({ cardW, cardY }: { cardW: number; cardY: number }) {
         fontSize="10"
         fontWeight="800"
       >
-        policy 18+
+        política 18+
       </text>
       {/* Faux input rows */}
       <rect x="16" y="64" width={cardW - 88} height="8" rx="4" fill={ak.muted} />
@@ -169,7 +169,7 @@ function Step1Form({ cardW, cardY }: { cardW: number; cardY: number }) {
 }
 
 function Step2Router({ cardW, cardY }: { cardW: number; cardY: number }) {
-  const methods = ['gateway', 'credential', 'proof', 'fallback'];
+  const methods = ['gateway', 'credencial', 'prova', 'fallback'];
   return (
     <g transform={`translate(28 ${cardY + 20})`}>
       <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
@@ -276,7 +276,7 @@ function Step4Success({ cardW, cardY }: { cardW: number; cardY: number }) {
         fontSize="11"
         fontWeight="700"
       >
-        approved
+        aprovado
       </text>
       {/* Token line */}
       <rect

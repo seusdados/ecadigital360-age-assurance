@@ -42,13 +42,13 @@ export default function HeroAgeEligibilityIllustration({
         </marker>
       </defs>
 
-      {/* Soft accent halo */}
+      {/* Soft accent halo behind the shield only (not the whole illustration) */}
       <circle
         cx="280"
         cy="190"
-        r="180"
+        r="98"
         fill={ak.accent}
-        opacity="0.07"
+        opacity="0.12"
         className="ak-breathe"
       />
 
@@ -146,7 +146,7 @@ export default function HeroAgeEligibilityIllustration({
           fontSize="13"
           fontWeight="800"
         >
-          policy 18+
+          política 18+
         </text>
         <text
           x="100"
@@ -357,7 +357,7 @@ export default function HeroAgeEligibilityIllustration({
           fontSize="11"
           fontWeight="700"
         >
-          token assinado
+          comprovante assinado
         </text>
 
         {/* Expiry chip */}
@@ -382,10 +382,17 @@ export default function HeroAgeEligibilityIllustration({
         </text>
       </g>
 
-      {/* ── Footnote: data NOT shared ──────────────────────────── */}
+      {/* ── Footnote: data NOT shared (separated from the halo) ── */}
+      <line
+        x1="180"
+        y1="364"
+        x2="380"
+        y2="364"
+        stroke={ak.border}
+      />
       <text
         x="280"
-        y="368"
+        y="380"
         textAnchor="middle"
         fill={ak.mutedForeground}
         fontSize="9"
@@ -396,12 +403,12 @@ export default function HeroAgeEligibilityIllustration({
       </text>
       <text
         x="280"
-        y="386"
+        y="394"
         textAnchor="middle"
         fill={ak.mutedForeground}
-        fontSize="11"
+        fontSize="10"
       >
-        nome · documento · data de nascimento · selfie
+        nome · documento · data de nascimento · foto
       </text>
     </svg>
   );

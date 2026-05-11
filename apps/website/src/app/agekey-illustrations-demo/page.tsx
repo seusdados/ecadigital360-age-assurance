@@ -61,14 +61,16 @@ export default function AgeKeyIllustrationsDemoPage() {
           Componentes React/SVG inline, sem dependências novas, usando variáveis do tema do AgeKey e respeitando prefers-reduced-motion.
         </p>
 
-        <div className="mt-14 space-y-20">
+        <div className="mt-14 space-y-16">
           {illustrations.map(([name, Illustration]) => (
-            <article key={name}>
+            <article key={name} className="mx-auto w-full max-w-3xl">
               <div className="mb-4 flex items-baseline gap-3 border-b border-border pb-3">
                 <h2 className="font-mono text-sm font-medium text-foreground">{name}</h2>
               </div>
-              <div className="mx-auto w-full max-w-5xl">
-                <Illustration />
+              {/* Fixed-height stage so every illustration shares the same visual footprint
+                  regardless of intrinsic aspect ratio. */}
+              <div className="flex h-[360px] w-full items-center justify-center rounded-lg border border-border bg-card p-6">
+                <Illustration className="!h-full !w-auto max-w-full" />
               </div>
             </article>
           ))}
