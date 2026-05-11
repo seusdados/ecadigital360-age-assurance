@@ -2,56 +2,206 @@ import type { SVGProps } from 'react';
 import { MotionStyle } from './MotionStyle';
 import { ak, svgText } from './theme';
 
-export default function EvidenceAuditDiagram({ className, ...props }: SVGProps<SVGSVGElement>) {
-  const allowed = ['tenant_id', 'policy_id', 'timestamp', 'method', 'result', 'artifact_hash', 'expires_at'];
-  const blocked = ['documento bruto', 'selfie', 'nome civil', 'data de nascimento'];
+const stored = [
+  'inquilino',
+  'identificador da regra',
+  'data e hora',
+  'método',
+  'resultado',
+  'resumo do artefato',
+  'expiração',
+];
+
+const blocked = ['documento bruto', 'foto', 'nome civil', 'data de nascimento'];
+
+export default function EvidenceAuditDiagram({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 1040 560"
+      viewBox="0 0 1040 480"
       role="img"
-      aria-label="Evidence Layer registra evidências minimizadas para auditoria sem armazenar documento bruto ou identidade civil"
+      aria-label="Evidence Layer registra apenas dados minimizados para auditoria, sem armazenar identidade civil ou documento bruto"
       className={`ak-svg-root h-auto w-full ${className ?? ''}`}
       style={svgText}
       {...props}
     >
       <MotionStyle />
-      <rect width="1040" height="560" rx="28" fill={ak.background} />
-      <g transform="translate(86 88)" className="ak-card">
-        <rect width="260" height="108" rx="18" fill={ak.card} stroke={ak.border} />
-        <circle cx="48" cy="54" r="20" fill={ak.success} opacity="0.14" />
-        <path d="M38 54 l10 10 22 -28" fill="none" stroke={ak.success} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-        <text x="84" y="50" fill={ak.foreground} fontSize="22" fontWeight="800">Verificação</text>
-        <text x="84" y="76" fill={ak.mutedForeground} fontSize="14">concluída</text>
+
+      <defs>
+        <marker
+          id="ak-ev-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerUnits="userSpaceOnUse"
+          markerWidth="8"
+          markerHeight="8"
+          orient="auto"
+        >
+          <path d="M0 0 L9 5 L0 10 Z" fill={ak.foreground} />
+        </marker>
+      </defs>
+
+      {/* ── LEFT: verificação concluída ─────────────────────── */}
+      <g className="ak-card">
+        <rect x="32" y="64" width="248" height="120" rx="14" fill={ak.card} stroke={ak.border} />
+        <g transform="translate(56 88)">
+          <circle cx="22" cy="22" r="20" fill={ak.success} opacity="0.16" />
+          <path
+            d="M12 24 l8 8 16 -22"
+            fill="none"
+            stroke={ak.success}
+            strokeWidth="4"
+          />
+        </g>
+        <text x="120" y="106" fill={ak.foreground} fontSize="15" fontWeight="800">
+          Verificação
+        </text>
+        <text x="120" y="126" fill={ak.mutedForeground} fontSize="12">
+          concluída
+        </text>
+        <text x="56" y="160" fill={ak.mutedForeground} fontSize="11">
+          decisão emitida há instantes
+        </text>
       </g>
-      <path d="M346 142 C430 142 444 236 480 256" stroke={ak.accent} strokeWidth="2" fill="none" className="ak-flow-line" />
-      <g transform="translate(384 202)" className="ak-card">
-        <rect width="312" height="250" rx="20" fill={ak.primary} />
-        <text x="156" y="48" fill={ak.primaryForeground} fontSize="25" fontWeight="900" textAnchor="middle">Evidence Layer</text>
-        <text x="156" y="74" fill={ak.primaryForeground} opacity="0.72" fontSize="14" textAnchor="middle">auditoria sem identidade civil</text>
-        {allowed.map((label, i) => (
-          <g key={label} transform={`translate(${34 + (i % 2) * 148} ${104 + Math.floor(i / 2) * 38})`} className={`ak-reveal-${(i % 5) + 1}`}>
-            <rect width="128" height="26" rx="8" fill={ak.primaryForeground} opacity="0.1" stroke={ak.accent} />
-            <text x="64" y="18" textAnchor="middle" fill={ak.primaryForeground} fontSize="11.5">{label}</text>
-          </g>
-        ))}
+
+      {/* connector to evidence */}
+      <path
+        d="M280 124 C336 124 336 224 376 240"
+        fill="none"
+        stroke={ak.foreground}
+        strokeOpacity="0.25"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M280 124 C336 124 336 224 376 240"
+        fill="none"
+        stroke={ak.accent}
+        strokeWidth="1.5"
+        strokeDasharray="2 5"
+        className="ak-flow-line"
+        markerEnd="url(#ak-ev-arrow)"
+      />
+
+      {/* ── CENTER: Evidence Layer ──────────────────────────── */}
+      <g transform="translate(376 152)" className="ak-card">
+        <rect width="288" height="240" rx="20" fill={ak.foreground} />
+        <text
+          x="144"
+          y="44"
+          textAnchor="middle"
+          fill={ak.background}
+          fontSize="16"
+          fontWeight="800"
+        >
+          Evidence Layer
+        </text>
+        <text
+          x="144"
+          y="64"
+          textAnchor="middle"
+          fill={ak.background}
+          opacity="0.7"
+          fontSize="11"
+        >
+          auditoria sem identidade civil
+        </text>
+        <g transform="translate(20 88)">
+          {stored.map((label, i) => {
+            const col = i % 2;
+            const row = Math.floor(i / 2);
+            return (
+              <g key={label} transform={`translate(${col * 130} ${row * 36})`}>
+                <rect
+                  width="120"
+                  height="26"
+                  rx="7"
+                  fill={ak.background}
+                  opacity="0.1"
+                  stroke={ak.accent}
+                  strokeOpacity="0.3"
+                />
+                <text
+                  x="60"
+                  y="17"
+                  textAnchor="middle"
+                  fill={ak.background}
+                  fontSize="10"
+                  fontWeight="600"
+                >
+                  {label}
+                </text>
+              </g>
+            );
+          })}
+        </g>
       </g>
-      <path d="M696 326 C760 326 778 382 828 396" stroke={ak.accent} strokeWidth="2" fill="none" className="ak-flow-line" />
-      <g transform="translate(780 360)" className="ak-card">
-        <rect width="210" height="108" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="28" y="46" fill={ak.foreground} fontSize="22" fontWeight="800">Relatório</text>
-        <text x="28" y="72" fill={ak.mutedForeground} fontSize="14">auditável</text>
-        <circle cx="170" cy="54" r="18" fill={ak.accent} opacity="0.16" className="ak-pulse" />
+
+      {/* connector from evidence to report */}
+      <path
+        d="M664 272 C720 272 720 372 760 384"
+        fill="none"
+        stroke={ak.foreground}
+        strokeOpacity="0.25"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M664 272 C720 272 720 372 760 384"
+        fill="none"
+        stroke={ak.accent}
+        strokeWidth="1.5"
+        strokeDasharray="2 5"
+        className="ak-flow-line"
+        markerEnd="url(#ak-ev-arrow)"
+      />
+
+      {/* ── BOTTOM RIGHT: relatório auditável ───────────────── */}
+      <g transform="translate(760 348)" className="ak-card">
+        <rect width="240" height="84" rx="14" fill={ak.card} stroke={ak.border} />
+        <text x="24" y="36" fill={ak.foreground} fontSize="14" fontWeight="800">
+          Relatório
+        </text>
+        <text x="24" y="58" fill={ak.mutedForeground} fontSize="12">
+          auditável · sem PII
+        </text>
+        <circle cx="208" cy="42" r="14" fill={ak.accent} opacity="0.18" className="ak-pulse" />
+        <path
+          d="M203 42 l4 4 10 -10"
+          fill="none"
+          stroke={ak.accent}
+          strokeWidth="2.6"
+        />
       </g>
-      <g transform="translate(70 314)" className="ak-card">
-        <rect width="276" height="154" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="26" y="42" fill={ak.foreground} fontSize="20" fontWeight="800">Não armazenado no core</text>
-        {blocked.map((label, i) => (
-          <g key={label} transform={`translate(26 ${64 + i * 30})`}>
-            <rect width="206" height="22" rx="7" fill={ak.muted} stroke={ak.border} />
-            <path d="M14 11 h18" stroke={ak.warning} strokeWidth="2" strokeLinecap="round" />
-            <text x="42" y="15" fill={ak.mutedForeground} fontSize="12">{label}</text>
-          </g>
-        ))}
+
+      {/* ── BOTTOM LEFT: não armazenado ─────────────────────── */}
+      <g transform="translate(32 308)" className="ak-card">
+        <rect width="288" height="124" rx="14" fill={ak.card} stroke={ak.border} />
+        <text x="24" y="36" fill={ak.foreground} fontSize="13" fontWeight="800">
+          Não armazenado no core
+        </text>
+        <g transform="translate(24 52)">
+          {blocked.map((label, i) => {
+            const col = i % 2;
+            const row = Math.floor(i / 2);
+            return (
+              <g key={label} transform={`translate(${col * 124} ${row * 28})`}>
+                <rect
+                  width="116"
+                  height="22"
+                  rx="6"
+                  fill={ak.muted}
+                  stroke={ak.border}
+                />
+                <path d="M10 11 h12" stroke={ak.warning} strokeWidth="2" strokeLinecap="round" />
+                <text x="28" y="15" fill={ak.mutedForeground} fontSize="10">
+                  {label}
+                </text>
+              </g>
+            );
+          })}
+        </g>
       </g>
     </svg>
   );
