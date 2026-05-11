@@ -2,54 +2,108 @@ import type { SVGProps } from 'react';
 import { MotionStyle } from './MotionStyle';
 import { ak, svgText } from './theme';
 
-export default function OvercollectionProblemDiagram({ className, ...props }: SVGProps<SVGSVGElement>) {
-  const heavy = ['documento', 'selfie', 'nome civil', 'data de nascimento', 'idade exata'];
-  const minimal = ['política etária', 'decisão mínima'];
+const heavy = ['documento', 'foto', 'nome civil', 'data de nascimento', 'idade exata'];
+const minimal = ['política etária satisfeita', 'decisão mínima'];
+
+export default function OvercollectionProblemDiagram({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 960 540"
+      viewBox="0 0 960 480"
       role="img"
-      aria-label="Comparação entre coleta excessiva de dados e decisão mínima com AgeKey"
+      aria-label="Comparação entre coleta excessiva de dados pessoais e a abordagem mínima do AgeKey"
       className={`ak-svg-root h-auto w-full ${className ?? ''}`}
       style={svgText}
       {...props}
     >
       <MotionStyle />
-      <rect width="960" height="540" rx="28" fill={ak.background} />
+
+      <defs>
+        <marker
+          id="ak-ov-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerUnits="userSpaceOnUse"
+          markerWidth="9"
+          markerHeight="9"
+          orient="auto"
+        >
+          <path d="M0 0 L9 5 L0 10 Z" fill={ak.foreground} />
+        </marker>
+      </defs>
+
+      {/* ── LEFT: Coleta excessiva ──────────────────────────── */}
       <g className="ak-card">
-        <rect x="70" y="72" width="360" height="392" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="102" y="122" fill={ak.foreground} fontSize="29" fontWeight="800">Coleta excessiva</text>
-        <text x="102" y="154" fill={ak.mutedForeground} fontSize="16">muitos dados para uma regra simples</text>
-        <circle cx="348" cy="116" r="28" fill={ak.warning} opacity="0.12" className="ak-pulse-slow" />
-        <path d="M348 98 v25" stroke={ak.warning} strokeWidth="4" strokeLinecap="round" />
-        <circle cx="348" cy="137" r="3" fill={ak.warning} />
-        {heavy.map((label, i) => (
-          <g key={label} transform={`translate(102 ${205 + i * 48})`} className={`ak-reveal-${i + 1}`}>
-            <rect width="242" height="34" rx="9" fill={ak.muted} stroke={ak.border} />
-            <line x1="18" y1="17" x2="36" y2="17" stroke={ak.warning} strokeWidth="2.2" strokeLinecap="round" />
-            <text x="52" y="22" fill={ak.mutedForeground} fontSize="15">{label}</text>
-          </g>
-        ))}
-      </g>
-      <path d="M455 264 C490 264 510 264 545 264" fill="none" stroke={ak.accent} strokeWidth="2.4" className="ak-flow-line" />
-      <circle cx="500" cy="264" r="22" fill={ak.card} stroke={ak.accent} />
-      <path d="M493 255 L503 264 L493 273" fill="none" stroke={ak.accent} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <g className="ak-card">
-        <rect x="560" y="72" width="360" height="392" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="592" y="122" fill={ak.foreground} fontSize="29" fontWeight="800">AgeKey</text>
-        <text x="592" y="154" fill={ak.mutedForeground} fontSize="16">confirma apenas o necessário</text>
-        <g className="ak-float-slow">
-          <circle cx="740" cy="226" r="64" fill={ak.accent} opacity="0.12" />
-          <path d="M740 178 L780 194 V231 C780 261 763 284 740 296 C717 284 700 261 700 231 V194 Z" fill={ak.primary} />
-          <path d="M724 232 L736 244 L760 214" fill="none" stroke={ak.accent} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="48" y="40" width="368" height="392" rx="20" fill={ak.card} stroke={ak.border} />
+        <text x="80" y="86" fill={ak.foreground} fontSize="20" fontWeight="800">
+          Coleta excessiva
+        </text>
+        <text x="80" y="108" fill={ak.mutedForeground} fontSize="13">
+          muitos dados para uma regra simples
+        </text>
+        {/* Warning badge */}
+        <g transform="translate(336 60)">
+          <circle cx="20" cy="20" r="20" fill={ak.warning} opacity="0.16" className="ak-pulse-slow" />
+          <path d="M20 10 v14" stroke={ak.warning} strokeWidth="3" strokeLinecap="round" />
+          <circle cx="20" cy="30" r="2.4" fill={ak.warning} />
         </g>
-        {minimal.map((label, i) => (
-          <g key={label} transform={`translate(620 ${340 + i * 48})`} className={`ak-reveal-${i + 1}`}>
-            <rect width="230" height="34" rx="9" fill={ak.accent} opacity="0.14" stroke={ak.border} />
-            <circle cx="22" cy="17" r="5" fill={ak.accent} />
-            <text x="40" y="22" fill={ak.foreground} fontSize="15" fontWeight="700">{label}</text>
-          </g>
-        ))}
+
+        {/* Stack of fields */}
+        <g transform="translate(80 144)">
+          {heavy.map((label, i) => (
+            <g key={label} transform={`translate(0 ${i * 50})`} className={`ak-reveal-${(i % 5) + 1}`}>
+              <rect width="304" height="36" rx="9" fill={ak.muted} stroke={ak.border} />
+              <line x1="20" y1="18" x2="38" y2="18" stroke={ak.warning} strokeWidth="2.4" strokeLinecap="round" />
+              <text x="52" y="23" fill={ak.foreground} fontSize="13" fontWeight="600">{label}</text>
+            </g>
+          ))}
+        </g>
+      </g>
+
+      {/* Connector */}
+      <line x1="416" y1="240" x2="544" y2="240" stroke={ak.foreground} strokeOpacity="0.25" strokeWidth="1.5" />
+      <line x1="416" y1="240" x2="544" y2="240" stroke={ak.accent} strokeWidth="1.5" strokeDasharray="2 5" className="ak-flow-line" markerEnd="url(#ak-ov-arrow)" />
+
+      {/* ── RIGHT: AgeKey minimal ───────────────────────────── */}
+      <g className="ak-card">
+        <rect x="544" y="40" width="368" height="392" rx="20" fill={ak.card} stroke={ak.border} />
+        <text x="576" y="86" fill={ak.foreground} fontSize="20" fontWeight="800">
+          AgeKey
+        </text>
+        <text x="576" y="108" fill={ak.mutedForeground} fontSize="13">
+          confirma apenas o necessário
+        </text>
+
+        {/* Shield centerpiece */}
+        <g transform="translate(660 152)" className="ak-float-slow">
+          <circle cx="68" cy="60" r="56" fill={ak.accent} opacity="0.14" />
+          <path
+            d="M68 26 L96 36 V62 C96 82 84 96 68 104 C52 96 40 82 40 62 V36 Z"
+            fill={ak.foreground}
+          />
+          <path d="M52 60 l11 11 19 -25" fill="none" stroke={ak.accent} strokeWidth="5" className="ak-check-pop" />
+        </g>
+
+        {/* Minimal output */}
+        <g transform="translate(584 312)">
+          {minimal.map((label, i) => (
+            <g key={label} transform={`translate(0 ${i * 44})`}>
+              <rect
+                width="288"
+                height="36"
+                rx="9"
+                fill={i === 1 ? ak.accent : ak.success}
+                opacity={i === 1 ? '0.14' : '0.14'}
+                stroke={ak.border}
+              />
+              <circle cx="20" cy="18" r="5" fill={i === 1 ? ak.accent : ak.success} className={i === 1 ? 'ak-pulse' : ''} />
+              <text x="36" y="23" fill={ak.foreground} fontSize="13" fontWeight="700">{label}</text>
+            </g>
+          ))}
+        </g>
       </g>
     </svg>
   );

@@ -63,13 +63,13 @@ export default function AgeKeyIllustrationsDemoPage() {
 
         <div className="mt-14 space-y-16">
           {illustrations.map(([name, Illustration]) => (
-            <article key={name} className="mx-auto w-full max-w-3xl">
+            <article key={name} className="mx-auto w-full max-w-4xl">
               <div className="mb-4 flex items-baseline gap-3 border-b border-border pb-3">
                 <h2 className="font-mono text-sm font-medium text-foreground">{name}</h2>
               </div>
               {/* Fixed-height stage so every illustration shares the same visual footprint
                   regardless of intrinsic aspect ratio. */}
-              <div className="flex h-[360px] w-full items-center justify-center rounded-lg border border-border bg-card p-6">
+              <div className="flex h-[440px] w-full items-center justify-center rounded-lg border border-border bg-card p-6">
                 <Illustration className="!h-full !w-auto max-w-full" />
               </div>
             </article>

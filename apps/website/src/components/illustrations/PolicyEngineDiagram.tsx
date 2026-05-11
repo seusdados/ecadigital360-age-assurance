@@ -2,55 +2,210 @@ import type { SVGProps } from 'react';
 import { MotionStyle } from './MotionStyle';
 import { ak, svgText } from './theme';
 
-export default function PolicyEngineDiagram({ className, ...props }: SVGProps<SVGSVGElement>) {
-  const inputs = ['Aplicação', 'Produto', 'Jurisdição', 'Contexto de risco'];
-  const rules = ['13+', '16+', '18+', '21+', 'faixa permitida'];
+const inputs = ['aplicação', 'produto', 'jurisdição', 'contexto de risco'];
+const rules = ['13+', '16+', '18+', '21+'];
+
+export default function PolicyEngineDiagram({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 980 520"
+      viewBox="0 0 960 480"
       role="img"
-      aria-label="Policy Engine configura regras etárias por aplicação, produto, jurisdição e contexto"
+      aria-label="Policy Engine recebe entradas de aplicação, produto, jurisdição e risco e devolve a regra etária aplicada"
       className={`ak-svg-root h-auto w-full ${className ?? ''}`}
       style={svgText}
       {...props}
     >
       <MotionStyle />
-      <rect width="980" height="520" rx="28" fill={ak.background} />
-      <g transform="translate(70 100)" className="ak-card">
-        <rect width="230" height="300" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="30" y="48" fill={ak.foreground} fontSize="24" fontWeight="800">Entradas</text>
-        {inputs.map((label, i) => (
-          <g key={label} transform={`translate(30 ${86 + i * 52})`} className={`ak-reveal-${i + 1}`}>
-            <rect width="170" height="34" rx="9" fill={ak.muted} stroke={ak.border} />
-            <circle cx="20" cy="17" r="5" fill={ak.accent} />
-            <text x="38" y="22" fill={ak.foreground} fontSize="14" fontWeight="650">{label}</text>
-          </g>
-        ))}
-      </g>
-      <path d="M300 250 H392" stroke={ak.accent} strokeWidth="2" className="ak-flow-line" />
-      <g transform="translate(392 86)" className="ak-float-slow">
-        <rect width="260" height="328" rx="20" fill={ak.primary} />
-        <text x="130" y="56" fill={ak.primaryForeground} fontSize="27" fontWeight="900" textAnchor="middle">Policy Engine</text>
-        <text x="130" y="84" fill={ak.primaryForeground} opacity="0.75" fontSize="14" textAnchor="middle">threshold é regra da política</text>
-        {rules.map((rule, i) => (
-          <g key={rule} transform={`translate(${34 + (i % 2) * 104} ${118 + Math.floor(i / 2) * 58})`} className={`ak-reveal-${i + 1}`}>
-            <rect width={i === 4 ? 194 : 78} height="38" rx="11" fill={ak.accent} opacity="0.95" />
-            <text x={i === 4 ? 97 : 39} y="25" textAnchor="middle" fill={ak.accentForeground} fontSize="16" fontWeight="900">{rule}</text>
-          </g>
-        ))}
-      </g>
-      <path d="M652 250 H744" stroke={ak.accent} strokeWidth="2" className="ak-flow-line" />
-      <g transform="translate(744 152)" className="ak-card">
-        <rect width="220" height="196" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="28" y="46" fill={ak.foreground} fontSize="23" fontWeight="800">Saída</text>
-        <g transform="translate(28 82)">
-          <rect width="164" height="34" rx="9" fill={ak.muted} stroke={ak.border} />
-          <text x="82" y="22" textAnchor="middle" fill={ak.foreground} fontSize="14" fontWeight="700">policy_id</text>
+
+      <defs>
+        <marker
+          id="ak-pe-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerUnits="userSpaceOnUse"
+          markerWidth="8"
+          markerHeight="8"
+          orient="auto"
+        >
+          <path d="M0 0 L9 5 L0 10 Z" fill={ak.foreground} />
+        </marker>
+      </defs>
+
+      {/* ── LEFT: inputs card ───────────────────────────────── */}
+      <g className="ak-card">
+        <rect
+          x="48"
+          y="80"
+          width="232"
+          height="320"
+          rx="18"
+          fill={ak.card}
+          stroke={ak.border}
+        />
+        <text x="72" y="116" fill={ak.foreground} fontSize="16" fontWeight="800">
+          Entradas
+        </text>
+        <text x="72" y="136" fill={ak.mutedForeground} fontSize="12">
+          contexto da regra
+        </text>
+        <g transform="translate(72 160)">
+          {inputs.map((label, i) => (
+            <g key={label} transform={`translate(0 ${i * 52})`}>
+              <rect width="184" height="36" rx="9" fill={ak.muted} stroke={ak.border} />
+              <circle cx="20" cy="18" r="5" fill={ak.accent} />
+              <text x="38" y="23" fill={ak.foreground} fontSize="13" fontWeight="600">
+                {label}
+              </text>
+            </g>
+          ))}
         </g>
-        <g transform="translate(28 132)">
-          <rect width="164" height="34" rx="9" fill={ak.accent} opacity="0.16" stroke={ak.border} />
-          <text x="82" y="22" textAnchor="middle" fill={ak.foreground} fontSize="14" fontWeight="700">threshold aplicado</text>
+      </g>
+
+      {/* Connector left → engine */}
+      <line
+        x1="280"
+        y1="240"
+        x2="358"
+        y2="240"
+        stroke={ak.foreground}
+        strokeOpacity="0.3"
+        strokeWidth="1.5"
+      />
+      <line
+        x1="280"
+        y1="240"
+        x2="358"
+        y2="240"
+        stroke={ak.accent}
+        strokeWidth="1.5"
+        strokeDasharray="2 5"
+        className="ak-flow-line"
+        markerEnd="url(#ak-pe-arrow)"
+      />
+
+      {/* ── CENTER: Policy Engine ───────────────────────────── */}
+      <g transform="translate(364 80)" className="ak-float-slow">
+        <rect width="232" height="320" rx="20" fill={ak.foreground} />
+        <text
+          x="116"
+          y="48"
+          textAnchor="middle"
+          fill={ak.background}
+          fontSize="17"
+          fontWeight="800"
+        >
+          Policy Engine
+        </text>
+        <text
+          x="116"
+          y="68"
+          textAnchor="middle"
+          fill={ak.background}
+          opacity="0.7"
+          fontSize="11"
+        >
+          regras configuráveis
+        </text>
+        <g transform="translate(28 96)">
+          {rules.map((rule, i) => {
+            const col = i % 2;
+            const row = Math.floor(i / 2);
+            return (
+              <g key={rule} transform={`translate(${col * 88} ${row * 64})`}>
+                <rect width="80" height="48" rx="12" fill={ak.accent} />
+                <text
+                  x="40"
+                  y="30"
+                  textAnchor="middle"
+                  fill={ak.accentForeground}
+                  fontSize="18"
+                  fontWeight="900"
+                >
+                  {rule}
+                </text>
+              </g>
+            );
+          })}
+          {/* faixa permitida row */}
+          <rect y="128" width="168" height="48" rx="12" fill={ak.accent} opacity="0.4" />
+          <text
+            x="84"
+            y="158"
+            textAnchor="middle"
+            fill={ak.accentForeground}
+            fontSize="14"
+            fontWeight="800"
+          >
+            faixa permitida
+          </text>
         </g>
+      </g>
+
+      {/* Connector engine → output */}
+      <line
+        x1="596"
+        y1="240"
+        x2="674"
+        y2="240"
+        stroke={ak.foreground}
+        strokeOpacity="0.3"
+        strokeWidth="1.5"
+      />
+      <line
+        x1="596"
+        y1="240"
+        x2="674"
+        y2="240"
+        stroke={ak.accent}
+        strokeWidth="1.5"
+        strokeDasharray="2 5"
+        className="ak-flow-line"
+        markerEnd="url(#ak-pe-arrow)"
+      />
+
+      {/* ── RIGHT: output card ──────────────────────────────── */}
+      <g className="ak-card">
+        <rect
+          x="680"
+          y="120"
+          width="232"
+          height="240"
+          rx="18"
+          fill={ak.card}
+          stroke={ak.border}
+        />
+        <text x="704" y="156" fill={ak.foreground} fontSize="16" fontWeight="800">
+          Saída
+        </text>
+        <text x="704" y="176" fill={ak.mutedForeground} fontSize="12">
+          regra resolvida
+        </text>
+        <g transform="translate(704 200)">
+          <rect width="184" height="40" rx="10" fill={ak.muted} stroke={ak.border} />
+          <text x="92" y="26" textAnchor="middle" fill={ak.foreground} fontSize="13" fontWeight="700">
+            identificador da regra
+          </text>
+        </g>
+        <g transform="translate(704 252)">
+          <rect width="184" height="40" rx="10" fill={ak.accent} opacity="0.18" />
+          <rect width="184" height="40" rx="10" fill="none" stroke={ak.accent} strokeOpacity="0.4" />
+          <text x="92" y="26" textAnchor="middle" fill={ak.foreground} fontSize="14" fontWeight="800">
+            18+
+          </text>
+        </g>
+        <text
+          x="796"
+          y="320"
+          textAnchor="middle"
+          fill={ak.mutedForeground}
+          fontSize="11"
+        >
+          regra da plataforma
+        </text>
       </g>
     </svg>
   );
