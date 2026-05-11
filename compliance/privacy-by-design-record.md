@@ -134,9 +134,45 @@ Cada decisão segue o formato: contexto → decisão → motivo → controle →
 - **Controle:** Edge Function `parental-consent-text-get`; `parental_consent_policies` versionada.
 - **Status:** vigente.
 
+## D17. AgeKey Consent MVP — preparação para release PROD
+
+- **Contexto:** após validação ponta-a-ponta em HML (`docs/audit/hml-consent-mvp-end-to-end-smoke-success-report.md`, 8/8 smoke), iniciada a preparação executiva para release Consent MVP em PROD (`tpdiccnmsnjtjwhardij`). Safety Signals **fora** desta janela.
+- **Decisão:** liberar **somente** Consent MVP em PROD em janela controlada, com flag `AGEKEY_PARENTAL_CONSENT_ENABLED=true` ativada apenas após smoke pré-ativação confirmar resposta 503 defensiva.
+- **Motivo:**
+  1. Maturidade técnica isolada (HML 8/8 smoke; bugs do ciclo corrigidos em PRs #66, #70/#71, #73).
+  2. LGPD art. 14 §1º + ECA art. 17 dão base legal direta para consentimento parental.
+  3. Safety v1 exige RIPD próprio e tem dependências cross-cutting (migration 029) que falham sem 024.
+  4. Reversibilidade rápida via flag OFF (< 2 min, sem perda de dados).
+- **Controles aplicados**:
+  - **Minimização**: `decision_envelope.content_included = false`, `pii_included = false` em todas as respostas públicas.
+  - **Tokens assinados (ES256/JWS)**: claims minimizadas, sem birthdate/email/child_ref em claro; opaque hashes apenas.
+  - **Guardian contact protegido**: cifrado em Supabase Vault via `vault.create_secret()` (migration 031, padrão validado em 016).
+  - **OTP via canal separado**: provider real **obrigatório** em PROD (Twilio/Mailgun/SES/etc.); cleartext apenas via provider, jamais no body de resposta.
+  - **Revogação online**: `parental-consent-revoke` + verificação `revoked_at` em `parental-consent-token-verify`.
+  - **Auditabilidade**: `audit_events_*` particionado por mês, com `payload_hash`; sem PII em audit.
+  - **`AGEKEY_PARENTAL_CONSENT_DEV_RETURN_OTP` proibido em PROD**: defesa em código (`_shared/parental-consent/otp.ts:61-65` lança se provider=noop e DEV_RETURN_OTP=false).
+- **Fora do escopo desta janela**:
+  - Safety Signals (migrations 024-027, 7 funções, flag, cron secret).
+  - Migration 028 (cron retention) — defer.
+  - Migration 029 (cross-cutting com Safety; `safety_recompute_messages_24h` falha sem 024).
+  - SD-JWT VC real, ZKP real, gateways novos — adapters seguem honest stubs.
+- **Riscos residuais aceitos** (documentados em `docs/release/prod-consent-mvp-executive-go-no-go-pack.md` §10):
+  - Tenant pode armazenar contato em claro do seu lado (fora do AgeKey) — controle contratual.
+  - Tenant pode usar `child_ref_hmac` que de fato é PII — Privacy Guard rejeita PII conhecida; revisão contratual.
+  - Provider OTP terceiro processa contato — listado em `compliance/subprocessors-register.md`.
+  - Token vazado permite ler estado — TTL curto + revogabilidade + ES256 + verificação online.
+- **Evidências disponíveis**:
+  - HML 8/8 smoke: `docs/audit/hml-consent-mvp-end-to-end-smoke-success-report.md`.
+  - Pre-flight PROD: `docs/audit/prod-consent-mvp-preflight-readiness-report.md`.
+  - Memo executivo: `docs/release/prod-consent-mvp-executive-go-no-go-pack.md`.
+  - Runbook: `docs/release/prod-consent-mvp-execution-runbook.md`.
+  - ADR: `docs/adr/ADR-AGEKEY-CONSENT-PROD-RELEASE.md`.
+- **Status:** **preparado para decisão executiva, não executado**. Release em PROD aguarda 10 bloqueadores de governança (provider OTP real, RIPD assinado, memo assinado, janela, operador, DBA on-call, backup confirmado, workflow PROD, `PANEL_BASE_URL`, decisão tenant). Esta entrada será atualizada com `executado: <data UTC>` após a janela autorizada.
+
 ## Histórico
 
 | Data | Decisões introduzidas/atualizadas |
 |---|---|
 | 2026-04-29 | D1–D7 (versão original). |
 | 2026-05-07 | D8–D16; reorganização e alinhamento com R1–R11 + post-merge fixes. |
+| 2026-05-10 | D17: AgeKey Consent MVP — preparação para release PROD (preparado, não executado). |
