@@ -3,18 +3,17 @@ import { cn } from '@/lib/utils';
 
 type Size = 'sm' | 'md' | 'lg';
 
-/* Width caps after the round of "um pouco maior" feedback. The bumps keep
- * internal SVG text comfortably above the 11px effective render mark while
- * giving illustrations more visual presence in their sections.
+/* Width caps tuned so the illustration carries proportional visual weight
+ * against headlines and copy alongside it.
  *
- * sm = 42rem  = 672px (side-by-side columns: hero, contact, etc.)
- * md = 60rem  = 960px (default for full-width inserts)
- * lg = 72rem  = 1152px (wide horizontal flow diagrams)
+ * sm = 48rem  = 768px (side-by-side: hero, contact)
+ * md = 72rem  = 1152px (default full-width inserts)
+ * lg = 88rem  = 1408px (wide horizontal flow diagrams)
  */
 const widths: Record<Size, string> = {
-  sm: 'max-w-2xl',
-  md: 'max-w-5xl',
-  lg: 'max-w-6xl',
+  sm: 'max-w-3xl',
+  md: 'max-w-6xl',
+  lg: 'max-w-[88rem]',
 };
 
 export function IllustrationFrame({
