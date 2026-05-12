@@ -22,7 +22,8 @@
     "./parental-consent": "./src/parental-consent/index.ts",
     "./safety": "./src/safety/index.ts",
     "./credential": "./src/credential/index.ts",
-    "./proof": "./src/proof/index.ts"
+    "./proof": "./src/proof/index.ts",
+    "./oneclick": "./src/oneclick/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

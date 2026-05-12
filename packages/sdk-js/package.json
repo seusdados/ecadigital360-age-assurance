@@ -22,6 +22,11 @@
       "types": "./dist/safety.d.ts",
       "import": "./dist/safety.js",
       "default": "./dist/safety.js"
+    },
+    "./oneclick": {
+      "types": "./dist/oneclick.d.ts",
+      "import": "./dist/oneclick.js",
+      "default": "./dist/oneclick.js"
     }
   },
   "files": [
