@@ -214,6 +214,8 @@ export default function HeroAgeEligibilityIllustration({
 
       {/* ── CENTER: AgeKey shield ───────────────────────────────── */}
       <g transform="translate(224 132)" className="ak-float-slow">
+        {/* Expanding glow ring (drawn first so the shield sits on top) */}
+        <circle cx="56" cy="60" r="58" fill={ak.accent} opacity="0" className="ak-glow" />
         <circle
           cx="56"
           cy="60"
@@ -222,17 +224,19 @@ export default function HeroAgeEligibilityIllustration({
           stroke={ak.border}
         />
         <circle cx="56" cy="60" r="42" fill={ak.accent} opacity="0.18" />
-        <path
-          d="M56 30 L82 42 V68 C82 88 71 104 56 112 C41 104 30 88 30 68 V42 Z"
-          fill={ak.foreground}
-        />
-        <path
-          d="M44 64 l9 9 17 -23"
-          fill="none"
-          stroke={ak.accent}
-          strokeWidth="5"
-          className="ak-check-pop"
-        />
+        <g className="ak-tilt">
+          <path
+            d="M56 30 L82 42 V68 C82 88 71 104 56 112 C41 104 30 88 30 68 V42 Z"
+            fill={ak.foreground}
+          />
+          <path
+            d="M44 64 l9 9 17 -23"
+            fill="none"
+            stroke={ak.accent}
+            strokeWidth="5"
+            className="ak-check-pop"
+          />
+        </g>
         <text
           x="56"
           y="148"

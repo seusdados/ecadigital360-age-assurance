@@ -27,7 +27,7 @@ export function MotionStyle() {
       .ak-flow-line-short { stroke-dasharray: 3 6; }
 
       /* Scale/rotate animations must pivot from their own bbox center. */
-      .ak-pulse, .ak-pulse-slow, .ak-check-pop, .ak-rotate-slow {
+      .ak-pulse, .ak-pulse-slow, .ak-check-pop, .ak-rotate-slow, .ak-tilt, .ak-glow {
         transform-box: fill-box;
         transform-origin: center;
       }
@@ -43,6 +43,12 @@ export function MotionStyle() {
         }
         .ak-flow-line-short {
           animation: ak-dash 1.8s linear infinite;
+        }
+        .ak-glow {
+          animation: ak-glow 3.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+        .ak-tilt {
+          animation: ak-tilt 6.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
         }
 
         /* Pulse: organic in/out instead of mechanical ease-in-out */
@@ -153,6 +159,20 @@ export function MotionStyle() {
         45%  { scale: 1.32; }
         70%  { scale: 0.98; }
         100% { scale: 1; }
+      }
+
+      /* Glow: expanding ring that fades out (radiating halo effect) */
+      @keyframes ak-glow {
+        0%   { opacity: 0;   scale: 0.7; }
+        30%  { opacity: 0.6; }
+        100% { opacity: 0;   scale: 1.6; }
+      }
+
+      /* Tilt: gentle rotational sway combined with float for physical feel */
+      @keyframes ak-tilt {
+        0%   { rotate: -1.6deg; }
+        50%  { rotate: 1.6deg; }
+        100% { rotate: -1.6deg; }
       }
     `}</style>
   );

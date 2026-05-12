@@ -21,15 +21,15 @@ export function PageHero({
       <div className="container py-16 md:py-24">
         <div className="max-w-3xl">
           {eyebrow ? (
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
               {eyebrow}
             </p>
           ) : null}
-          <h1 className="mt-3 text-3xl md:text-4xl font-semibold tracking-tight text-balance">
+          <h1 className="mt-3 text-2xl md:text-3xl font-semibold tracking-tight text-balance">
             {title}
           </h1>
           {subtitle ? (
-            <p className="mt-5 text-base md:text-md text-muted-foreground">
+            <p className="mt-5 text-base text-muted-foreground">
               {subtitle}
             </p>
           ) : null}

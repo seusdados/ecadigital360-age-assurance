@@ -100,18 +100,21 @@ export default function MethodRouterDiagram({
       {/* Center: Verifier Core */}
       <g transform="translate(410 168)" className="ak-float-slow">
         <rect width="180" height="144" rx="20" fill={ak.foreground} />
+        <circle cx="90" cy="50" r="34" fill={ak.accent} opacity="0" className="ak-glow" />
         <circle cx="90" cy="50" r="26" fill={ak.accent} opacity="0.22" />
-        <path
-          d="M90 28 L110 36 V58 C110 74 100 86 90 92 C80 86 70 74 70 58 V36 Z"
-          fill={ak.background}
-        />
-        <path
-          d="M80 56 l8 8 14 -18"
-          fill="none"
-          stroke={ak.accent}
-          strokeWidth="3.5"
-          className="ak-check-pop"
-        />
+        <g className="ak-tilt">
+          <path
+            d="M90 28 L110 36 V58 C110 74 100 86 90 92 C80 86 70 74 70 58 V36 Z"
+            fill={ak.background}
+          />
+          <path
+            d="M80 56 l8 8 14 -18"
+            fill="none"
+            stroke={ak.accent}
+            strokeWidth="3.5"
+            className="ak-check-pop"
+          />
+        </g>
         <text
           x="90"
           y="116"

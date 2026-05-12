@@ -54,7 +54,7 @@ export default function AgeKeyIllustrationsDemoPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
           Biblioteca visual AgeKey
         </p>
-        <h1 className="mt-4 max-w-3xl text-3xl font-semibold tracking-tight md:text-4xl">
+        <h1 className="mt-4 max-w-3xl text-2xl font-semibold tracking-tight md:text-3xl">
           Ilustrações com motion effects no padrão visual do site público
         </h1>
         <p className="mt-5 max-w-3xl text-base text-muted-foreground md:text-md">
