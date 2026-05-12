@@ -59,6 +59,17 @@ import {
 export * from './types.js';
 export * from './errors.js';
 
+/**
+ * @experimental OneClick preview surface. Re-exported from `./oneclick.js`.
+ * Do NOT use in production — the orchestrator endpoints are not deployed.
+ * See `docs/specs/agekey-oneclick.md`.
+ */
+export {
+  OneclickClient,
+  OneclickEndpointUnavailableError,
+} from './oneclick.js';
+export type { OneclickClientOptions } from './oneclick.js';
+
 // -----------------------------------------------------------------------------
 // Client configuration
 // -----------------------------------------------------------------------------
