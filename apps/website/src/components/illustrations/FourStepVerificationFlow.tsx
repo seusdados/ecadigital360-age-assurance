@@ -1,16 +1,17 @@
-import type { SVGProps } from 'react';
-import { MotionStyle } from './MotionStyle';
-import { ak, svgText } from './theme';
+'use client';
 
-/**
- * Four-step verification flow — each step is a mini UI mockup inside a
- * card, with a numbered badge on the spine that connects all four.
- *
- *   1. Create session     (form-style card with policy chip)
- *   2. Choose method      (router with 4 method options)
- *   3. Prove minimally    (shield + minimization indicator)
- *   4. Receive result     (success badge with token)
- */
+import { motion } from 'framer-motion';
+import type { SVGProps } from 'react';
+import { ak, svgText } from './theme';
+import { checkPop, dashFlow, pulse, reveal } from './motion-config';
+
+const steps = [
+  { n: '1', title: 'Criar sessão', body: 'política + contexto' },
+  { n: '2', title: 'Escolher método', body: 'gateway · credencial · prova' },
+  { n: '3', title: 'Provar o necessário', body: 'sem identidade civil' },
+  { n: '4', title: 'Receber resultado', body: 'comprovante + decisão mínima' },
+];
+
 export default function FourStepVerificationFlow({
   className,
   ...props
@@ -22,13 +23,6 @@ export default function FourStepVerificationFlow({
   const spineY = 64;
   const cardY = spineY + 40;
 
-  const steps = [
-    { n: '1', title: 'Criar sessão', body: 'política + contexto' },
-    { n: '2', title: 'Escolher método', body: 'gateway · credencial · prova' },
-    { n: '3', title: 'Provar o necessário', body: 'sem identidade civil' },
-    { n: '4', title: 'Receber resultado', body: 'comprovante + decisão mínima' },
-  ];
-
   return (
     <svg
       viewBox="0 0 1080 400"
@@ -38,8 +32,6 @@ export default function FourStepVerificationFlow({
       style={svgText}
       {...props}
     >
-      <MotionStyle />
-
       {/* Spine */}
       <line
         x1={startX + cardW / 2}
@@ -49,7 +41,7 @@ export default function FourStepVerificationFlow({
         stroke={ak.border}
         strokeWidth="2"
       />
-      <line
+      <motion.line
         x1={startX + cardW / 2}
         y1={spineY}
         x2={startX + cardW * 3 + gap * 3 + cardW / 2}
@@ -57,7 +49,7 @@ export default function FourStepVerificationFlow({
         stroke={ak.accent}
         strokeWidth="2"
         strokeDasharray="3 6"
-        className="ak-flow-line"
+        {...dashFlow}
       />
 
       {steps.map((s, i) => {
@@ -67,7 +59,6 @@ export default function FourStepVerificationFlow({
 
         return (
           <g key={s.n} transform={`translate(${x} 0)`}>
-            {/* Numbered badge on spine */}
             <circle
               cx={numCx}
               cy={spineY}
@@ -85,7 +76,6 @@ export default function FourStepVerificationFlow({
               {s.n}
             </text>
 
-            {/* Card */}
             <g className="ak-card">
               <rect
                 x="0"
@@ -97,13 +87,11 @@ export default function FourStepVerificationFlow({
                 stroke={ak.border}
               />
 
-              {/* Mini UI mockup per step (top half of card) */}
               {i === 0 && <Step1Form cardW={cardW} cardY={cardY} />}
               {i === 1 && <Step2Router cardW={cardW} cardY={cardY} />}
               {i === 2 && <Step3Shield cardW={cardW} cardY={cardY} />}
               {i === 3 && <Step4Success cardW={cardW} cardY={cardY} />}
 
-              {/* Divider before titles */}
               <line
                 x1="24"
                 y1={cardY + 148}
@@ -112,7 +100,6 @@ export default function FourStepVerificationFlow({
                 stroke={ak.border}
               />
 
-              {/* Title + body */}
               <text
                 x={cardW / 2}
                 y={cardY + 178}
@@ -140,16 +127,13 @@ export default function FourStepVerificationFlow({
   );
 }
 
-/* ─── Per-step mini-mockups (rendered inside each step card) ─────── */
+/* ─── Per-step mini-mockups ──────────────────────────────────────── */
 
 function Step1Form({ cardW, cardY }: { cardW: number; cardY: number }) {
   return (
     <g transform={`translate(28 ${cardY + 20})`}>
-      {/* Mini form card */}
       <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
-      {/* Row label */}
       <rect x="16" y="16" width="48" height="6" rx="3" fill={ak.mutedForeground} opacity="0.35" />
-      {/* Pill (policy) */}
       <rect x="16" y="30" width="80" height="22" rx="11" fill={ak.foreground} />
       <text
         x="56"
@@ -161,7 +145,6 @@ function Step1Form({ cardW, cardY }: { cardW: number; cardY: number }) {
       >
         política 18+
       </text>
-      {/* Faux input rows */}
       <rect x="16" y="64" width={cardW - 88} height="8" rx="4" fill={ak.muted} />
       <rect x="16" y="78" width={cardW - 120} height="8" rx="4" fill={ak.muted} opacity="0.6" />
     </g>
@@ -178,7 +161,12 @@ function Step2Router({ cardW, cardY }: { cardW: number; cardY: number }) {
         const col = i % 2;
         const isPrimary = i === 0;
         return (
-          <g key={m} transform={`translate(${12 + col * 80} ${14 + row * 36})`}>
+          <motion.g
+            key={m}
+            transform={`translate(${12 + col * 80} ${14 + row * 36})`}
+            {...reveal(i * 0.12)}
+            style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          >
             <rect
               width="74"
               height="26"
@@ -188,11 +176,24 @@ function Step2Router({ cardW, cardY }: { cardW: number; cardY: number }) {
               stroke={isPrimary ? ak.accent : ak.border}
               strokeOpacity={isPrimary ? '0.5' : '1'}
             />
-            <circle cx="13" cy="13" r="3" fill={isPrimary ? ak.accent : ak.mutedForeground} opacity={isPrimary ? '1' : '0.4'} />
-            <text x="22" y="17" fill={ak.foreground} fontSize="10" fontWeight={isPrimary ? '700' : '500'} opacity={isPrimary ? '1' : '0.7'}>
+            <circle
+              cx="13"
+              cy="13"
+              r="3"
+              fill={isPrimary ? ak.accent : ak.mutedForeground}
+              opacity={isPrimary ? '1' : '0.4'}
+            />
+            <text
+              x="22"
+              y="17"
+              fill={ak.foreground}
+              fontSize="10"
+              fontWeight={isPrimary ? '700' : '500'}
+              opacity={isPrimary ? '1' : '0.7'}
+            >
               {m}
             </text>
-          </g>
+          </motion.g>
         );
       })}
     </g>
@@ -203,21 +204,23 @@ function Step3Shield({ cardW, cardY }: { cardW: number; cardY: number }) {
   return (
     <g transform={`translate(28 ${cardY + 20})`}>
       <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
-      {/* Shield centered */}
       <g transform={`translate(${(cardW - 56) / 2 - 22} 14)`}>
         <circle cx="22" cy="32" r="30" fill={ak.accent} opacity="0.14" />
         <path
           d="M22 12 L40 20 V36 C40 50 32 60 22 64 C12 60 4 50 4 36 V20 Z"
           fill={ak.foreground}
         />
-        <path
+        <motion.path
           d="M14 36 l6 7 12 -16"
           fill="none"
           stroke={ak.accent}
           strokeWidth="3.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          {...checkPop}
         />
       </g>
-      {/* Privacy label */}
       <rect
         x="32"
         y="76"
@@ -247,18 +250,19 @@ function Step4Success({ cardW, cardY }: { cardW: number; cardY: number }) {
   return (
     <g transform={`translate(28 ${cardY + 20})`}>
       <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
-      {/* Big check */}
       <g transform={`translate(${(cardW - 56) / 2 - 18} 10)`}>
         <circle cx="18" cy="18" r="18" fill={ak.success} opacity="0.14" />
-        <path
+        <motion.path
           d="M9 19 l6 6 12 -16"
           fill="none"
           stroke={ak.success}
           strokeWidth="3.6"
-          className="ak-check-pop"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          {...checkPop}
         />
       </g>
-      {/* Approved pill */}
       <rect
         x={(cardW - 56) / 2 - 36}
         y="56"
@@ -278,7 +282,6 @@ function Step4Success({ cardW, cardY }: { cardW: number; cardY: number }) {
       >
         aprovado
       </text>
-      {/* Token line */}
       <rect
         x="20"
         y="84"
@@ -287,7 +290,14 @@ function Step4Success({ cardW, cardY }: { cardW: number; cardY: number }) {
         rx="4"
         fill={ak.muted}
       />
-      <circle cx="26" cy="88" r="2.5" fill={ak.accent} className="ak-pulse" />
+      <motion.circle
+        cx={26}
+        cy={88}
+        r={2.5}
+        fill={ak.accent}
+        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+        {...pulse}
+      />
     </g>
   );
 }
