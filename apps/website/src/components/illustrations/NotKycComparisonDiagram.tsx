@@ -2,47 +2,213 @@ import type { SVGProps } from 'react';
 import { MotionStyle } from './MotionStyle';
 import { ak, svgText } from './theme';
 
-export default function NotKycComparisonDiagram({ className, ...props }: SVGProps<SVGSVGElement>) {
+/**
+ * KYC tradicional vs AgeKey — two side-by-side product cards stating the
+ * objective and the resulting payload, with a center pill summarising the
+ * core distinction. UI-mockup framing instead of abstract schematic.
+ */
+export default function NotKycComparisonDiagram({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      viewBox="0 0 960 500"
+      viewBox="0 0 960 480"
       role="img"
-      aria-label="Comparação entre KYC, que identifica uma pessoa, e AgeKey, que valida elegibilidade etária"
+      aria-label="Comparação entre KYC tradicional, que identifica uma pessoa, e AgeKey, que valida apenas elegibilidade etária"
       className={`ak-svg-root h-auto w-full ${className ?? ''}`}
       style={svgText}
       {...props}
     >
       <MotionStyle />
-      <rect width="960" height="500" rx="28" fill={ak.background} />
+
+      {/* ── LEFT: KYC tradicional ─────────────────────────────── */}
       <g className="ak-card">
-        <rect x="64" y="82" width="392" height="324" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="96" y="134" fill={ak.foreground} fontSize="30" fontWeight="800">KYC tradicional</text>
-        <text x="96" y="166" fill={ak.mutedForeground} fontSize="16">objetivo: identificação civil</text>
-        <rect x="96" y="216" width="296" height="64" rx="14" fill={ak.muted} stroke={ak.border} />
-        <text x="120" y="255" fill={ak.foreground} fontSize="20" fontWeight="700">Quem é essa pessoa?</text>
-        <path d="M244 294 v34" stroke={ak.border} strokeWidth="2" />
-        <rect x="116" y="328" width="256" height="44" rx="12" fill={ak.muted} stroke={ak.border} />
-        <text x="148" y="356" fill={ak.mutedForeground} fontSize="17">identidade civil</text>
+        <rect
+          x="48"
+          y="40"
+          width="392"
+          height="328"
+          rx="20"
+          fill={ak.card}
+          stroke={ak.border}
+        />
+        {/* Header */}
+        <text
+          x="80"
+          y="86"
+          fill={ak.foreground}
+          fontSize="22"
+          fontWeight="800"
+        >
+          KYC tradicional
+        </text>
+        <text
+          x="80"
+          y="110"
+          fill={ak.mutedForeground}
+          fontSize="13"
+        >
+          objetivo: identificação civil
+        </text>
+
+        {/* Question card */}
+        <rect
+          x="80"
+          y="140"
+          width="328"
+          height="56"
+          rx="12"
+          fill={ak.muted}
+          stroke={ak.border}
+        />
+        <text
+          x="244"
+          y="174"
+          textAnchor="middle"
+          fill={ak.foreground}
+          fontSize="15"
+          fontWeight="700"
+        >
+          Quem é essa pessoa?
+        </text>
+
+        {/* Output stack — many fields */}
+        <g transform="translate(80 220)">
+          {[
+            'nome civil',
+            'documento',
+            'data de nascimento',
+            'biometria',
+          ].map((label, i) => (
+            <g key={label} transform={`translate(0 ${i * 32})`}>
+              <rect
+                width="328"
+                height="24"
+                rx="6"
+                fill={ak.muted}
+                stroke={ak.border}
+              />
+              <circle cx="16" cy="12" r="3" fill={ak.foreground} opacity="0.55" />
+              <text x="30" y="16" fill={ak.foreground} fontSize="12" fontWeight="600">
+                {label}
+              </text>
+            </g>
+          ))}
+        </g>
       </g>
 
+      {/* ── RIGHT: AgeKey ────────────────────────────────────── */}
       <g className="ak-card">
-        <rect x="504" y="82" width="392" height="324" rx="18" fill={ak.card} stroke={ak.border} />
-        <text x="536" y="134" fill={ak.foreground} fontSize="30" fontWeight="800">AgeKey</text>
-        <text x="536" y="166" fill={ak.mutedForeground} fontSize="16">objetivo: elegibilidade etária</text>
-        <rect x="536" y="216" width="296" height="64" rx="14" fill={ak.accent} opacity="0.14" stroke={ak.border} />
-        <text x="560" y="244" fill={ak.foreground} fontSize="18" fontWeight="700">A política etária</text>
-        <text x="560" y="268" fill={ak.foreground} fontSize="18" fontWeight="700">foi satisfeita?</text>
-        <path d="M684 294 v34" stroke={ak.accent} strokeWidth="2" className="ak-flow-line-short" />
-        <rect x="568" y="328" width="232" height="44" rx="12" fill={ak.card} stroke={ak.accent} />
-        <circle cx="592" cy="350" r="7" fill={ak.success} className="ak-pulse" />
-        <text x="612" y="356" fill={ak.foreground} fontSize="17" fontWeight="700">decisão mínima</text>
+        <rect
+          x="520"
+          y="40"
+          width="392"
+          height="328"
+          rx="20"
+          fill={ak.card}
+          stroke={ak.border}
+        />
+        <text
+          x="552"
+          y="86"
+          fill={ak.foreground}
+          fontSize="22"
+          fontWeight="800"
+        >
+          AgeKey
+        </text>
+        <text
+          x="552"
+          y="110"
+          fill={ak.mutedForeground}
+          fontSize="13"
+        >
+          objetivo: elegibilidade etária
+        </text>
+
+        {/* Question card (highlighted) */}
+        <rect
+          x="552"
+          y="140"
+          width="328"
+          height="56"
+          rx="12"
+          fill={ak.accent}
+          opacity="0.14"
+        />
+        <rect
+          x="552"
+          y="140"
+          width="328"
+          height="56"
+          rx="12"
+          fill="none"
+          stroke={ak.accent}
+          strokeOpacity="0.5"
+        />
+        <text
+          x="716"
+          y="174"
+          textAnchor="middle"
+          fill={ak.foreground}
+          fontSize="15"
+          fontWeight="700"
+        >
+          A política etária foi satisfeita?
+        </text>
+
+        {/* Output: single decision row */}
+        <g transform="translate(552 226)">
+          <rect
+            width="328"
+            height="34"
+            rx="9"
+            fill={ak.success}
+            opacity="0.14"
+          />
+          <circle cx="20" cy="17" r="5" fill={ak.success} className="ak-pulse" />
+          <text x="36" y="22" fill={ak.foreground} fontSize="13" fontWeight="700">
+            decisão mínima · assinada
+          </text>
+        </g>
+
+        {/* Footnote: nothing else */}
+        <g transform="translate(552 280)">
+          <rect
+            width="328"
+            height="34"
+            rx="9"
+            fill="none"
+            stroke={ak.border}
+            strokeDasharray="3 4"
+          />
+          <text
+            x="164"
+            y="22"
+            textAnchor="middle"
+            fill={ak.mutedForeground}
+            fontSize="12"
+          >
+            sem nome · documento · data · foto
+          </text>
+        </g>
       </g>
 
-      <g transform="translate(338 430)">
-        <rect width="284" height="42" rx="21" fill={ak.primary} />
-        <text x="142" y="27" textAnchor="middle" fill={ak.primaryForeground} fontSize="16" fontWeight="700">Identificação civil ≠ elegibilidade etária</text>
+      {/* ── Center summary pill ──────────────────────────────── */}
+      <g transform="translate(304 408)">
+        <rect width="352" height="44" rx="22" fill={ak.foreground} />
+        <text
+          x="176"
+          y="29"
+          textAnchor="middle"
+          fill={ak.background}
+          fontSize="14"
+          fontWeight="700"
+        >
+          identificação civil ≠ elegibilidade etária
+        </text>
       </g>
-      <path d="M472 242 h16" stroke={ak.accent} strokeWidth="2" strokeLinecap="round" className="ak-flow-line" />
     </svg>
   );
 }

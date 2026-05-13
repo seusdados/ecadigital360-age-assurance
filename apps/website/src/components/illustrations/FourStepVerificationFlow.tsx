@@ -1,54 +1,303 @@
+'use client';
+
+import { motion } from 'framer-motion';
 import type { SVGProps } from 'react';
-import { MotionStyle } from './MotionStyle';
 import { ak, svgText } from './theme';
+import { checkPop, dashFlow, pulse, reveal } from './motion-config';
 
 const steps = [
-  ['1', 'Criar sessão', 'policy + contexto'],
-  ['2', 'Escolher método', 'gateway, credencial, proof ou fallback'],
-  ['3', 'Provar necessário', 'sem identidade civil'],
-  ['4', 'Receber resultado', 'token + decisão mínima'],
-] as const;
+  { n: '1', title: 'Criar sessão', body: 'política + contexto' },
+  { n: '2', title: 'Escolher método', body: 'gateway · credencial · prova' },
+  { n: '3', title: 'Provar o necessário', body: 'sem identidade civil' },
+  { n: '4', title: 'Receber resultado', body: 'comprovante + decisão mínima' },
+];
 
-export default function FourStepVerificationFlow({ className, ...props }: SVGProps<SVGSVGElement>) {
+export default function FourStepVerificationFlow({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
+  const cardW = 230;
+  const cardH = 240;
+  const gap = 28;
+  const startX = (1080 - (cardW * 4 + gap * 3)) / 2;
+  const spineY = 64;
+  const cardY = spineY + 40;
+
   return (
     <svg
-      viewBox="0 0 1080 520"
+      viewBox="0 0 1080 400"
       role="img"
-      aria-label="Fluxo AgeKey em quatro passos: criar sessão, escolher método, provar necessário e receber resultado mínimo"
+      aria-label="Fluxo AgeKey em quatro passos: criar sessão, escolher método, provar o necessário e receber resultado mínimo"
       className={`ak-svg-root h-auto w-full ${className ?? ''}`}
       style={svgText}
       {...props}
     >
-      <MotionStyle />
-      <rect width="1080" height="520" rx="28" fill={ak.background} />
-      <path d="M150 260 H930" fill="none" stroke={ak.accent} strokeWidth="2.2" className="ak-flow-line" opacity="0.75" />
-      {steps.map(([n, title, body], i) => {
-        const x = 70 + i * 260;
+      {/* Spine */}
+      <line
+        x1={startX + cardW / 2}
+        y1={spineY}
+        x2={startX + cardW * 3 + gap * 3 + cardW / 2}
+        y2={spineY}
+        stroke={ak.border}
+        strokeWidth="2"
+      />
+      <motion.line
+        x1={startX + cardW / 2}
+        y1={spineY}
+        x2={startX + cardW * 3 + gap * 3 + cardW / 2}
+        y2={spineY}
+        stroke={ak.accent}
+        strokeWidth="2"
+        strokeDasharray="3 6"
+        {...dashFlow}
+      />
+
+      {steps.map((s, i) => {
+        const x = startX + i * (cardW + gap);
+        const isLast = i === steps.length - 1;
+        const numCx = cardW / 2;
+
         return (
-          <g key={n} transform={`translate(${x} 96)`} className={`ak-card ak-reveal-${i + 1}`}>
-            <rect width="210" height="300" rx="18" fill={ak.card} stroke={ak.border} />
-            <circle cx="38" cy="38" r="18" fill={ak.primary} />
-            <text x="38" y="45" textAnchor="middle" fill={ak.primaryForeground} fontSize="18" fontWeight="800">{n}</text>
-            <text x="28" y="104" fill={ak.foreground} fontSize="23" fontWeight="800">{title}</text>
-            <text x="28" y="135" fill={ak.mutedForeground} fontSize="15">{body}</text>
-            <g transform="translate(38 190)">
-              <circle cx="67" cy="38" r="48" fill={i === 3 ? ak.success : ak.accent} opacity="0.12" className="ak-pulse-slow" />
-              {i === 0 && <path d="M36 22 h72 v58 h-72z M50 38 h42 M50 54 h58" fill="none" stroke={ak.foreground} strokeWidth="2.4" strokeLinecap="round" />}
-              {i === 1 && <path d="M67 18 l44 24 -44 24 -44 -24z M67 66 v32 M35 82 h64" fill="none" stroke={ak.foreground} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />}
-              {i === 2 && <path d="M67 14 L106 30 V64 C106 94 86 114 67 122 C48 114 28 94 28 64 V30 Z" fill="none" stroke={ak.foreground} strokeWidth="3" />}
-              {i === 3 && <path d="M36 64 l22 22 54 -58" fill="none" stroke={ak.success} strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" className="ak-check-pop" />}
+          <g key={s.n} transform={`translate(${x} 0)`}>
+            <circle
+              cx={numCx}
+              cy={spineY}
+              r="22"
+              fill={isLast ? ak.success : ak.foreground}
+            />
+            <text
+              x={numCx}
+              y={spineY + 6}
+              textAnchor="middle"
+              fill={isLast ? ak.successForeground : ak.background}
+              fontSize="15"
+              fontWeight="800"
+            >
+              {s.n}
+            </text>
+
+            <g className="ak-card">
+              <rect
+                x="0"
+                y={cardY}
+                width={cardW}
+                height={cardH}
+                rx="16"
+                fill={ak.card}
+                stroke={ak.border}
+              />
+
+              {i === 0 && <Step1Form cardW={cardW} cardY={cardY} />}
+              {i === 1 && <Step2Router cardW={cardW} cardY={cardY} />}
+              {i === 2 && <Step3Shield cardW={cardW} cardY={cardY} />}
+              {i === 3 && <Step4Success cardW={cardW} cardY={cardY} />}
+
+              <line
+                x1="24"
+                y1={cardY + 148}
+                x2={cardW - 24}
+                y2={cardY + 148}
+                stroke={ak.border}
+              />
+
+              <text
+                x={cardW / 2}
+                y={cardY + 178}
+                textAnchor="middle"
+                fill={ak.foreground}
+                fontSize="15"
+                fontWeight="700"
+              >
+                {s.title}
+              </text>
+              <text
+                x={cardW / 2}
+                y={cardY + 200}
+                textAnchor="middle"
+                fill={ak.mutedForeground}
+                fontSize="12"
+              >
+                {s.body}
+              </text>
             </g>
-            {i === 3 && (
-              <g transform="translate(26 262)">
-                <rect width="72" height="22" rx="7" fill={ak.success} opacity="0.12" />
-                <text x="36" y="15" textAnchor="middle" fill={ak.foreground} fontSize="11" fontWeight="700">approved</text>
-                <rect x="78" width="72" height="22" rx="7" fill={ak.muted} stroke={ak.border} />
-                <text x="114" y="15" textAnchor="middle" fill={ak.mutedForeground} fontSize="11">denied</text>
-              </g>
-            )}
           </g>
         );
       })}
     </svg>
+  );
+}
+
+/* ─── Per-step mini-mockups ──────────────────────────────────────── */
+
+function Step1Form({ cardW, cardY }: { cardW: number; cardY: number }) {
+  return (
+    <g transform={`translate(28 ${cardY + 20})`}>
+      <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
+      <rect x="16" y="16" width="48" height="6" rx="3" fill={ak.mutedForeground} opacity="0.35" />
+      <rect x="16" y="30" width="80" height="22" rx="11" fill={ak.foreground} />
+      <text
+        x="56"
+        y="44"
+        textAnchor="middle"
+        fill={ak.background}
+        fontSize="10"
+        fontWeight="800"
+      >
+        política 18+
+      </text>
+      <rect x="16" y="64" width={cardW - 88} height="8" rx="4" fill={ak.muted} />
+      <rect x="16" y="78" width={cardW - 120} height="8" rx="4" fill={ak.muted} opacity="0.6" />
+    </g>
+  );
+}
+
+function Step2Router({ cardW, cardY }: { cardW: number; cardY: number }) {
+  const methods = ['gateway', 'credencial', 'prova', 'fallback'];
+  return (
+    <g transform={`translate(28 ${cardY + 20})`}>
+      <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
+      {methods.map((m, i) => {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const isPrimary = i === 0;
+        return (
+          <motion.g
+            key={m}
+            transform={`translate(${12 + col * 80} ${14 + row * 36})`}
+            {...reveal(i * 0.12)}
+            style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          >
+            <rect
+              width="74"
+              height="26"
+              rx="7"
+              fill={isPrimary ? ak.accent : ak.muted}
+              opacity={isPrimary ? '0.2' : '1'}
+              stroke={isPrimary ? ak.accent : ak.border}
+              strokeOpacity={isPrimary ? '0.5' : '1'}
+            />
+            <circle
+              cx="13"
+              cy="13"
+              r="3"
+              fill={isPrimary ? ak.accent : ak.mutedForeground}
+              opacity={isPrimary ? '1' : '0.4'}
+            />
+            <text
+              x="22"
+              y="17"
+              fill={ak.foreground}
+              fontSize="10"
+              fontWeight={isPrimary ? '700' : '500'}
+              opacity={isPrimary ? '1' : '0.7'}
+            >
+              {m}
+            </text>
+          </motion.g>
+        );
+      })}
+    </g>
+  );
+}
+
+function Step3Shield({ cardW, cardY }: { cardW: number; cardY: number }) {
+  return (
+    <g transform={`translate(28 ${cardY + 20})`}>
+      <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
+      <g transform={`translate(${(cardW - 56) / 2 - 22} 14)`}>
+        <circle cx="22" cy="32" r="30" fill={ak.accent} opacity="0.14" />
+        <path
+          d="M22 12 L40 20 V36 C40 50 32 60 22 64 C12 60 4 50 4 36 V20 Z"
+          fill={ak.foreground}
+        />
+        <motion.path
+          d="M14 36 l6 7 12 -16"
+          fill="none"
+          stroke={ak.accent}
+          strokeWidth="3.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          {...checkPop}
+        />
+      </g>
+      <rect
+        x="32"
+        y="76"
+        width={cardW - 120}
+        height="16"
+        rx="4"
+        fill="none"
+        stroke={ak.border}
+        strokeDasharray="3 3"
+      />
+      <text
+        x={(cardW - 56) / 2}
+        y="87"
+        textAnchor="middle"
+        fill={ak.mutedForeground}
+        fontSize="9"
+        fontWeight="600"
+        letterSpacing="0.06em"
+      >
+        SEM IDENTIDADE CIVIL
+      </text>
+    </g>
+  );
+}
+
+function Step4Success({ cardW, cardY }: { cardW: number; cardY: number }) {
+  return (
+    <g transform={`translate(28 ${cardY + 20})`}>
+      <rect width={cardW - 56} height="100" rx="10" fill={ak.background} stroke={ak.border} />
+      <g transform={`translate(${(cardW - 56) / 2 - 18} 10)`}>
+        <circle cx="18" cy="18" r="18" fill={ak.success} opacity="0.14" />
+        <motion.path
+          d="M9 19 l6 6 12 -16"
+          fill="none"
+          stroke={ak.success}
+          strokeWidth="3.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          {...checkPop}
+        />
+      </g>
+      <rect
+        x={(cardW - 56) / 2 - 36}
+        y="56"
+        width="72"
+        height="20"
+        rx="6"
+        fill={ak.success}
+        opacity="0.14"
+      />
+      <text
+        x={(cardW - 56) / 2}
+        y="69"
+        textAnchor="middle"
+        fill={ak.foreground}
+        fontSize="11"
+        fontWeight="700"
+      >
+        aprovado
+      </text>
+      <rect
+        x="20"
+        y="84"
+        width={cardW - 96}
+        height="8"
+        rx="4"
+        fill={ak.muted}
+      />
+      <motion.circle
+        cx={26}
+        cy={88}
+        r={2.5}
+        fill={ak.accent}
+        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+        {...pulse}
+      />
+    </g>
   );
 }

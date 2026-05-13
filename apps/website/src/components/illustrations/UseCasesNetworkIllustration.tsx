@@ -3,18 +3,24 @@ import { MotionStyle } from './MotionStyle';
 import { ak, svgText } from './theme';
 
 const cases = [
-  ['Edtechs', 116, 88],
-  ['Marketplaces', 654, 88],
-  ['Publishers', 96, 344],
-  ['Jogos', 672, 344],
-  ['Comunidades', 356, 58],
-  ['Apps digitais', 360, 402],
+  { label: 'Edtechs', x: 96, y: 60 },
+  { label: 'Marketplaces', x: 624, y: 60 },
+  { label: 'Publishers', x: 76, y: 320 },
+  { label: 'Jogos', x: 644, y: 320 },
+  { label: 'Comunidades', x: 360, y: 32 },
+  { label: 'Apps digitais', x: 360, y: 388 },
 ] as const;
 
-export default function UseCasesNetworkIllustration({ className, ...props }: SVGProps<SVGSVGElement>) {
+export default function UseCasesNetworkIllustration({
+  className,
+  ...props
+}: SVGProps<SVGSVGElement>) {
+  // Center of the illustration
+  const cx = 480;
+  const cy = 240;
   return (
     <svg
-      viewBox="0 0 960 560"
+      viewBox="0 0 960 480"
       role="img"
       aria-label="AgeKey conectado a edtechs, marketplaces, publishers, jogos, comunidades e apps digitais"
       className={`ak-svg-root h-auto w-full ${className ?? ''}`}
@@ -22,22 +28,84 @@ export default function UseCasesNetworkIllustration({ className, ...props }: SVG
       {...props}
     >
       <MotionStyle />
-      <rect width="960" height="560" rx="28" fill={ak.background} />
-      <path d="M480 280 L226 160 M480 280 L764 160 M480 280 L206 416 M480 280 L782 416 M480 280 L470 136 M480 280 L482 430" stroke={ak.accent} strokeWidth="2" className="ak-flow-line" opacity="0.7" />
-      <g transform="translate(362 198)" className="ak-float-slow">
-        <rect width="236" height="164" rx="22" fill={ak.primary} />
-        <circle cx="118" cy="58" r="34" fill={ak.accent} opacity="0.22" />
-        <path d="M118 31 L144 42 V66 C144 85 131 99 118 106 C105 99 92 85 92 66 V42 Z" fill={ak.primaryForeground} />
-        <text x="118" y="126" fill={ak.primaryForeground} fontSize="28" fontWeight="900" textAnchor="middle">AgeKey</text>
-      </g>
-      {cases.map(([label, x, y], i) => (
-        <g key={label} transform={`translate(${x} ${y})`} className={`ak-card ak-reveal-${(i % 5) + 1}`}>
-          <rect width="170" height="96" rx="17" fill={ak.card} stroke={ak.border} />
-          <circle cx="38" cy="48" r="18" fill={ak.accent} opacity="0.15" />
-          <path d="M30 48 h16 M38 40 v16" stroke={ak.accent} strokeWidth="2.4" strokeLinecap="round" />
-          <text x="66" y="54" fill={ak.foreground} fontSize="18" fontWeight="800">{label}</text>
+
+      {/* Connectors from center to each card (drawn first so they sit behind) */}
+      {cases.map((c) => {
+        const targetX = c.x + 88; // card center x (card width 176 / 2)
+        const targetY = c.y + 32; // card center y (card height 64 / 2)
+        return (
+          <g key={`${c.label}-line`}>
+            <line
+              x1={cx}
+              y1={cy}
+              x2={targetX}
+              y2={targetY}
+              stroke={ak.foreground}
+              strokeOpacity="0.18"
+              strokeWidth="1.4"
+            />
+            <line
+              x1={cx}
+              y1={cy}
+              x2={targetX}
+              y2={targetY}
+              stroke={ak.accent}
+              strokeWidth="1.4"
+              strokeDasharray="2 6"
+              className="ak-flow-line"
+            />
+          </g>
+        );
+      })}
+
+      {/* Outer cards */}
+      {cases.map((c) => (
+        <g key={c.label} transform={`translate(${c.x} ${c.y})`} className="ak-card">
+          <rect width="176" height="64" rx="14" fill={ak.card} stroke={ak.border} />
+          <circle cx="32" cy="32" r="14" fill={ak.accent} opacity="0.18" />
+          <circle cx="32" cy="32" r="6" fill={ak.accent} />
+          <text x="56" y="37" fill={ak.foreground} fontSize="14" fontWeight="700">
+            {c.label}
+          </text>
         </g>
       ))}
+
+      {/* Center hub: AgeKey */}
+      <g transform="translate(396 168)" className="ak-float-slow">
+        <rect width="168" height="144" rx="20" fill={ak.foreground} />
+        <circle cx="84" cy="50" r="26" fill={ak.accent} opacity="0.22" />
+        <path
+          d="M84 28 L104 36 V58 C104 74 94 86 84 92 C74 86 64 74 64 58 V36 Z"
+          fill={ak.background}
+        />
+        <path
+          d="M74 56 l8 8 14 -18"
+          fill="none"
+          stroke={ak.accent}
+          strokeWidth="3.5"
+          className="ak-check-pop"
+        />
+        <text
+          x="84"
+          y="116"
+          textAnchor="middle"
+          fill={ak.background}
+          fontSize="15"
+          fontWeight="800"
+        >
+          AgeKey
+        </text>
+        <text
+          x="84"
+          y="132"
+          textAnchor="middle"
+          fill={ak.background}
+          opacity="0.7"
+          fontSize="10"
+        >
+          uma camada · vários produtos
+        </text>
+      </g>
     </svg>
   );
 }

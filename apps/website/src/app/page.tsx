@@ -31,7 +31,7 @@ export default function HomePage() {
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
                 {c.hero.eyebrow}
               </p>
-              <h1 className="mt-4 text-3xl md:text-4xl font-semibold tracking-tight text-balance">
+              <h1 className="mt-4 text-2xl md:text-3xl font-semibold tracking-tight text-balance">
                 {c.hero.title}
               </h1>
               <p className="mt-6 text-base md:text-md text-muted-foreground">
@@ -302,7 +302,7 @@ export default function HomePage() {
       <section className="border-b border-border/60 bg-primary text-primary-foreground">
         <div className="container py-16 md:py-20">
           <div className="max-w-2xl">
-            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">
+            <h2 className="text-xl md:text-2xl font-semibold tracking-tight">
               {c.finalCta.title}
             </h2>
             <p className="mt-4 text-base md:text-md text-primary-foreground/80">

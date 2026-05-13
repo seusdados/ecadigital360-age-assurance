@@ -1,14 +1,12 @@
 export function MotionStyle() {
   return (
     <style>{`
-      /* ----- Render quality ---------------------------------------------- */
+      /* ── Render quality ────────────────────────────────────────────── */
       .ak-svg-root {
         shape-rendering: geometricPrecision;
         text-rendering: geometricPrecision;
       }
-      .ak-svg-root * {
-        vector-effect: non-scaling-stroke;
-      }
+      .ak-svg-root * { vector-effect: non-scaling-stroke; }
       .ak-svg-root path,
       .ak-svg-root line,
       .ak-svg-root polyline {
@@ -20,70 +18,161 @@ export function MotionStyle() {
         letter-spacing: -0.005em;
       }
 
-      /* ----- Card shadows ------------------------------------------------ */
-      .ak-card      { filter: drop-shadow(0 8px 16px rgb(20 22 30 / 0.06)); }
-      .ak-soft-card { filter: drop-shadow(0 6px 12px rgb(20 22 30 / 0.045)); }
+      /* ── Card depth ────────────────────────────────────────────────── */
+      .ak-card      { filter: drop-shadow(0 12px 24px rgb(20 22 30 / 0.09)); }
+      .ak-soft-card { filter: drop-shadow(0 6px 14px rgb(20 22 30 / 0.05)); }
 
-      /* ----- Connector dash patterns ------------------------------------ */
-      .ak-flow-line       { stroke-dasharray: 8 10; }
-      .ak-flow-line-short { stroke-dasharray: 4 8; }
+      /* ── Connector dash patterns ──────────────────────────────────── */
+      .ak-flow-line       { stroke-dasharray: 6 8; }
+      .ak-flow-line-short { stroke-dasharray: 3 6; }
 
-      /* Scale/rotate animations must pivot around the element's own
-       * bounding-box center, otherwise they pivot around the SVG (0,0). */
-      .ak-pulse, .ak-pulse-slow, .ak-check-pop, .ak-rotate-slow {
+      /* Scale/rotate animations must pivot from their own bbox center. */
+      .ak-pulse, .ak-pulse-slow, .ak-check-pop, .ak-rotate-slow, .ak-tilt, .ak-glow {
         transform-box: fill-box;
         transform-origin: center;
       }
 
+      /* Easings (crafted, not the default ease/ease-in-out) */
+      /* expoOut: smooth deceleration into rest */
+      /* quartInOut: refined symmetric */
+      /* backOut: gentle overshoot for "pop" feel */
+
       @media (prefers-reduced-motion: no-preference) {
-        .ak-flow-line       { animation: ak-dash 5.5s linear infinite; }
-        .ak-flow-line-short { animation: ak-dash 4s   linear infinite; }
-        .ak-pulse           { animation: ak-pulse 2.8s ease-in-out infinite; }
-        .ak-pulse-slow      { animation: ak-pulse 4.2s ease-in-out infinite; }
-        .ak-float           { animation: ak-float 4.8s ease-in-out infinite; }
-        .ak-float-slow      { animation: ak-float 6.6s ease-in-out infinite; }
-        .ak-breathe         { animation: ak-breathe 5.4s ease-in-out infinite; }
-        .ak-scan            { animation: ak-scan 4.8s ease-in-out infinite; }
-        .ak-reveal-1        { animation: ak-reveal 5.4s ease-in-out infinite; }
-        .ak-reveal-2        { animation: ak-reveal 5.4s ease-in-out .45s infinite; }
-        .ak-reveal-3        { animation: ak-reveal 5.4s ease-in-out .9s  infinite; }
-        .ak-reveal-4        { animation: ak-reveal 5.4s ease-in-out 1.35s infinite; }
-        .ak-reveal-5        { animation: ak-reveal 5.4s ease-in-out 1.8s  infinite; }
-        .ak-rotate-slow     { animation: ak-rotate 16s linear infinite; }
-        .ak-check-pop       { animation: ak-check-pop 3.2s ease-in-out infinite; }
+        .ak-flow-line {
+          animation: ak-dash 2.4s linear infinite;
+        }
+        .ak-flow-line-short {
+          animation: ak-dash 1.8s linear infinite;
+        }
+        .ak-glow {
+          animation: ak-glow 3.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+        .ak-tilt {
+          animation: ak-tilt 6.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+        }
+
+        /* Pulse: organic in/out instead of mechanical ease-in-out */
+        .ak-pulse {
+          animation: ak-pulse 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+        }
+        .ak-pulse-slow {
+          animation: ak-pulse 3.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+        }
+
+        /* Float: longer rest at top + bottom, like a real hover */
+        .ak-float {
+          animation: ak-float 4.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+        }
+        .ak-float-slow {
+          animation: ak-float-slow 6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+        }
+
+        /* Breathe: extra-smooth, asymmetric to feel alive */
+        .ak-breathe {
+          animation: ak-breathe 5.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+
+        /* Scan: quartInOut for refined sweep */
+        .ak-scan {
+          animation: ak-scan 3.2s cubic-bezier(0.76, 0, 0.24, 1) infinite;
+        }
+
+        /* Reveal: anticipation + settle */
+        .ak-reveal-1 { animation: ak-reveal 4.6s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+        .ak-reveal-2 { animation: ak-reveal 4.6s cubic-bezier(0.34, 1.56, 0.64, 1) .35s infinite; }
+        .ak-reveal-3 { animation: ak-reveal 4.6s cubic-bezier(0.34, 1.56, 0.64, 1) .7s  infinite; }
+        .ak-reveal-4 { animation: ak-reveal 4.6s cubic-bezier(0.34, 1.56, 0.64, 1) 1.05s infinite; }
+        .ak-reveal-5 { animation: ak-reveal 4.6s cubic-bezier(0.34, 1.56, 0.64, 1) 1.4s infinite; }
+
+        /* Rotate: linear stays linear, but faster */
+        .ak-rotate-slow {
+          animation: ak-rotate 14s linear infinite;
+        }
+
+        /* Check pop: back-out for satisfying confirmation */
+        .ak-check-pop {
+          animation: ak-check-pop 2.8s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+        }
       }
 
-      /* Use the independent CSS transform properties (translate/scale/rotate)
-       * instead of the shorthand "transform" so each animation composes
-       * additively with the SVG transform="..." attribute on its <g>.
-       * The shorthand replaces the attribute and snaps animated groups to
-       * (0,0) of the SVG viewport, which caused visible overlap. */
-      @keyframes ak-dash { to { stroke-dashoffset: -72; } }
+      /* ── Keyframes (composable via independent transform properties) ── */
+
+      @keyframes ak-dash {
+        to { stroke-dashoffset: -140; }
+      }
+
+      /* Pulse: rest, expand, settle, rest */
       @keyframes ak-pulse {
-        0%, 100% { opacity: .55; scale: 1; }
-        50%      { opacity: 1;   scale: 1.08; }
+        0%   { opacity: .4; scale: 1; }
+        35%  { opacity: 1;  scale: 1.22; }
+        55%  { opacity: .9; scale: 1.06; }
+        100% { opacity: .4; scale: 1; }
       }
+
+      /* Float: arc through anticipation -> peak -> settle */
       @keyframes ak-float {
-        0%, 100% { translate: 0 0; }
-        50%      { translate: 0 -7px; }
+        0%   { translate: 0 0; }
+        45%  { translate: 0 -10px; }
+        55%  { translate: 0 -10px; }
+        100% { translate: 0 0; }
       }
+      @keyframes ak-float-slow {
+        0%   { translate: 0 0; }
+        45%  { translate: 0 -14px; }
+        55%  { translate: 0 -14px; }
+        100% { translate: 0 0; }
+      }
+
+      /* Breathe: opacity + scale, asymmetric (in slow, out faster) */
       @keyframes ak-breathe {
-        0%, 100% { opacity: .52; }
-        50%      { opacity: .92; }
+        0%   { opacity: .3;  scale: 1; }
+        50%  { opacity: 1;   scale: 1.08; }
+        100% { opacity: .3;  scale: 1; }
       }
+
+      /* Scan: sweep with a fade at the edges */
       @keyframes ak-scan {
-        0%, 100% { translate: -8px 0; opacity: .22; }
-        50%      { translate: 8px 0;  opacity: .85; }
+        0%   { translate: -16px 0; opacity: 0; }
+        15%  { opacity: .9; }
+        50%  { translate: 16px 0;  opacity: 1; }
+        85%  { opacity: .9; }
+        100% { translate: -16px 0; opacity: 0; }
       }
+
+      /* Reveal: pre-state, lift + brighten, settle */
       @keyframes ak-reveal {
-        0%, 28%, 100% { opacity: .55; translate: 0 0; }
-        45%, 74%      { opacity: 1;   translate: 0 -2px; }
+        0%   { opacity: .3; translate: 0 0; }
+        30%  { opacity: 1;  translate: 0 -5px; }
+        50%  { opacity: 1;  translate: 0 -3px; }
+        80%  { opacity: 1;  translate: 0 -3px; }
+        100% { opacity: .3; translate: 0 0; }
       }
-      @keyframes ak-rotate { to { rotate: 360deg; } }
+
+      @keyframes ak-rotate {
+        to { rotate: 360deg; }
+      }
+
+      /* Check pop: anticipate, snap, settle (with subtle overshoot) */
       @keyframes ak-check-pop {
-        0%, 100% { scale: 1; }
-        38%      { scale: 1.1; }
-        58%      { scale: 1; }
+        0%   { scale: 1; }
+        15%  { scale: 0.92; }
+        45%  { scale: 1.32; }
+        70%  { scale: 0.98; }
+        100% { scale: 1; }
+      }
+
+      /* Glow: expanding ring that fades out (radiating halo effect) */
+      @keyframes ak-glow {
+        0%   { opacity: 0;   scale: 0.7; }
+        30%  { opacity: 0.6; }
+        100% { opacity: 0;   scale: 1.6; }
+      }
+
+      /* Tilt: gentle rotational sway combined with float for physical feel */
+      @keyframes ak-tilt {
+        0%   { rotate: -1.6deg; }
+        50%  { rotate: 1.6deg; }
+        100% { rotate: -1.6deg; }
       }
     `}</style>
   );
